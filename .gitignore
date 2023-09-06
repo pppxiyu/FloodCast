@@ -1,0 +1,9 @@
+slurm.sbatch
+.idea/
+__pycache__/
+data/
+docs/
+legacy/
+outputs/
+papers/
+presentations/
