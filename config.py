@@ -15,17 +15,18 @@ positive_weight: 'balanced' (only valid if 'logistics' is used for model)
 threshold_sigma = 2
 features = ['water_level', 'discharge']
 target = 'surge'
-# lags = (np.arange(4) + 1).tolist() + [95, 96, 97, 98]
-lags = (np.arange(4) + 1).tolist()
-forward = [1, 2]
-target_in_forward = 2
+lags = (np.arange(4) + 1).tolist() + [95, 96, 97, 98]
+forward = [1]
+target_in_forward = 1
 
 # create datasets
 test_percent = 0.15
 val_percent = 0.15
 
 # model
-model = 'logistics'
-positive_weight = "balanced"
+model = 'LSTM'
+if_weight = True
+batch_size = 256
+learning_rate = 0.001
 
 random_seed = 0

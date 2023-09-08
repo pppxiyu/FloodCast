@@ -3,18 +3,27 @@
 ## Abstract
 
 
-## I/O
+## Inputs
+
+### Configuration
 
 ### Outputs
 
-## Configuration
+## Requirements
+Required packages:
+* pytorch
+* numpy 
+* pandas
+* scipy
+* statsmodels
+* scikit-learn
+* plotly
+* matplotlib
 
-
-## Installation and running
+Running:
 
 
 ## Notes
-
 
 
 

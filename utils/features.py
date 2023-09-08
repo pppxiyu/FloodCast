@@ -100,12 +100,12 @@ def create_sequences(df, lag, forward, feature_list, target):
     lag_update = update_lag_w_forward(lag, forward)
 
     sequences = np.empty((len(df) - ((lag_update[-1]) + 1) + 1, len(lag_update) + 1, 1))
-    for variable in ([target] + feature_list):
-        df_lag = add_lags(df, lags = lag_update, column = variable)[0]
+    for v in ([target] + feature_list):
+        df_lag = add_lags(df, lags = lag_update, column = v)[0]
         df_lag = df_lag.dropna()
 
         drop_list = feature_list + [target]
-        drop_list.remove(variable)
+        drop_list.remove(v)
         df_lag = df_lag.drop(columns = drop_list, axis = 1)
 
         df_lag = df_lag[df_lag.columns[::-1]]
@@ -162,11 +162,11 @@ def split_sequences(
     forward_count = len(forward)
 
     train_x = sequences[:train_count, :-forward_count, :]
-    train_y = sequences[:train_count, -forward_count:, [0]]
+    train_y = sequences[:train_count, -forward_count:, 0]
     val_x = sequences[train_count: train_count + val_count, :-forward_count, :]
-    val_y = sequences[train_count: train_count + val_count, -forward_count:, [0]]
+    val_y = sequences[train_count: train_count + val_count, -forward_count:, 0]
     test_x = sequences[train_count + val_count: train_count + val_count + test_count, :-forward_count, :]
-    test_y = sequences[train_count + val_count: train_count + val_count + test_count, -forward_count:, [0]]
+    test_y = sequences[train_count + val_count: train_count + val_count + test_count, -forward_count:, 0]
 
     if num_time_feature > 0:
         train_x = _add_time(train_x, num_time_feature, 1)
@@ -185,15 +185,15 @@ def split_sequences(
     return train_x, train_y, val_x, val_y, test_x, test_y
 
 
-def sequenceTarget(yForward, X):
-    X_out = X[:, :-yForward, :]
-    y_temp = X[:, 1:, 0: 1] # get first one features
-    sequenceList = []
-    for i in range(y_temp.shape[0]):
-        y_tempSliced = y_temp[i, : , :]
-        sequence = sequencesGeneration_update(y_tempSliced, y_tempSliced.shape[0] - 1, yForward)
-        sequenceList.append(sequence)
-    y_out = np.stack(sequenceList)
-    print('X shape', X_out.shape, 'Dims: (sample, sequenceLen, feature)')
-    print('y shape', y_out.shape, 'Dims: (sample, sequenceLen, yForward, feature)')
-    return X_out, y_out
+# def sequenceTarget(yForward, X):
+#     X_out = X[:, :-yForward, :]
+#     y_temp = X[:, 1:, 0: 1] # get first one features
+#     sequenceList = []
+#     for i in range(y_temp.shape[0]):
+#         y_tempSliced = y_temp[i, : , :]
+#         sequence = sequencesGeneration_update(y_tempSliced, y_tempSliced.shape[0] - 1, yForward)
+#         sequenceList.append(sequence)
+#     y_out = np.stack(sequenceList)
+#     print('X shape', X_out.shape, 'Dims: (sample, sequenceLen, feature)')
+#     print('y shape', y_out.shape, 'Dims: (sample, sequenceLen, yForward, feature)')
+#     return X_out, y_out
