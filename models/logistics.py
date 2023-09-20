@@ -39,11 +39,9 @@ def train_pred(df,
     train_x, train_y, val_x, val_y, test_x, test_y = ft.split_sequences(
         sequences_w_index[:, :, :-1],
         val_percent, test_percent,
-        forward,
-        random_seed,
-        shuffle=False)
+        forward,)
     _, _, _, _, _, test_y_w_index = ft.split_sequences(
-        sequences_w_index[:, :, [-1]], val_percent, test_percent, forward, random_seed, shuffle=False)
+        sequences_w_index[:, :, [-1]], val_percent, test_percent, forward)
 
     train_x = np.concatenate([train_x, val_x], axis=0)
     train_y = np.concatenate([train_y, val_y], axis=0)

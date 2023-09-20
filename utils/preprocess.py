@@ -75,19 +75,19 @@ def data_imported_combine(*dfs):
     return data
 
 
-def data_add_target(df, sigma_count, forward, col_name = 'water_level'):
+def data_add_target(df, sigma_count, forward, target_name ='water_level'):
     # USE: use water level col to determine if there is water level surge
     # INPUT: df w/ water level col
     #        sigma, int, the number of sigma, threshold of water level surge
     #        forward, list of int, time steps for pred
     # OUTPUT: df w/ a target col
 
-    col_diff = df[[col_name]].diff(1)
+    col_diff = df[[target_name]].diff(1)
     threshold = (col_diff.mean() + col_diff.std() * sigma_count).values[0]
-    col_diff.loc[col_diff[col_name] >= threshold] = 1
-    col_diff.loc[col_diff[col_name] < threshold] = 0
+    col_diff.loc[col_diff[target_name] >= threshold] = 1
+    col_diff.loc[col_diff[target_name] < threshold] = 0
 
-    df['surge'] = col_diff[col_name]
+    df['surge'] = col_diff[target_name]
     df = df.iloc[1:]
 
     return df

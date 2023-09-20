@@ -12,21 +12,31 @@ positive_weight: 'balanced' (only valid if 'logistics' is used for model)
 
 
 # preprocess and create sequences
-threshold_sigma = 2
+threshold_sigma = 3
 features = ['water_level', 'discharge']
 target = 'surge'
 lags = (np.arange(4) + 1).tolist() + [95, 96, 97, 98]
 forward = [1]
 target_in_forward = 1
 
-# create datasets
-test_percent = 0.15
-val_percent = 0.15
-
 # model
 model = 'LSTM'
 if_weight = True
-batch_size = 256
-learning_rate = 0.001
+
+# cv and hp tune
+if_cv = False
+if_tune = True
+tune_rep_num = 1
+
+# create datasets (work when cv is disabled)
+test_percent = 0.15
+val_percent = 0.15
+
+# train hp (work when tuning is disabled)
+batch_size = 128
+learning_rate = 0.005
+
+# expr
+expr_label = 'LSTM'
 
 random_seed = 0

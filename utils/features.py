@@ -138,10 +138,9 @@ def _addLoc(x, numLocFeature, startLoc):
 
 def split_sequences(
         sequences,
-        val_percent, test_percent, forward,
-        random_seed,
-        num_time_feature=0, num_loc_feature=0,
-        shuffle=False):
+        train_percent, val_percent, test_percent, forward,
+        num_time_feature=0, num_loc_feature=0
+):
     # USE: split the sequences into datasets
     # INPUT: sequences: array, three dims (sample, lag, feature)
     #        val_proportion, test_proportion: float, 0-1
@@ -151,16 +150,13 @@ def split_sequences(
     #        random_seed: int
     # OUTPUT: datasets: array
 
-    if shuffle:
-        np.random.seed(random_seed)
-        np.random.shuffle(sequences)
-
     val_count = int(np.floor(sequences.shape[0] * val_percent))
     test_count = int(np.floor(sequences.shape[0] * test_percent))
-    train_count = sequences.shape[0] - val_count - test_count
+    train_count = int(np.floor(sequences.shape[0] * train_percent))
 
     forward_count = len(forward)
 
+    # indexing from the first time step
     train_x = sequences[:train_count, :-forward_count, :]
     train_y = sequences[:train_count, -forward_count:, 0]
     val_x = sequences[train_count: train_count + val_count, :-forward_count, :]

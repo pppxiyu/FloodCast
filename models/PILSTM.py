@@ -14,20 +14,8 @@ from torch.utils.data import Dataset
 import optuna
 
 import utils.features as ft
+import models.LSTM as lstm
 
-
-class RiverDataset(Dataset):
-    def __init__(self, x, y):
-        self.X = np.copy(x)
-        self.Y = np.copy(y)
-
-    def __len__(self):
-        return self.X.shape[0]
-
-    def __getitem__(self, i):
-        feature = self.X[i]
-        target = self.Y[i]
-        return feature, target
 
 
 class LSTM(nn.Module):
@@ -51,25 +39,6 @@ class LSTM(nn.Module):
         hn_to_dense = torch.cat([hn[i] for i in range(hn.size(0))], dim=-1)
         out = self.dense(hn_to_dense)
         return out.view(-1, self.num_class, self.num_forward)
-
-
-class EarlyStopper:
-    def __init__(self, patience=5, min_delta=0):
-        self.patience = patience
-        self.min_delta = min_delta
-        self.counter = 0
-        self.min_val_loss = np.inf
-        self.stop = False
-
-    def stopper(self, val_loss):
-        if val_loss < (self.min_val_loss - self.min_delta):
-            self.min_val_loss = val_loss
-            self.counter = 0
-        else:
-            self.counter += 1
-            if self.counter >= self.patience:
-                self.stop = True
-
 
 def train_loop(dataloader, model, loss_func, optimizer, device):
     model.train()
@@ -130,8 +99,8 @@ def train(device,
     #      the computation from dataloader to obtaining trained model
     # INPUT and OUTPUT: same as train_pred()
 
-    train_dataloader = DataLoader(RiverDataset(train_x, train_y.astype(int)), batch_size=batch_size, shuffle=True)
-    val_dataloader = DataLoader(RiverDataset(val_x, val_y.astype(int)), batch_size=batch_size, shuffle=True)
+    train_dataloader = DataLoader(lstm.RiverDataset(train_x, train_y.astype(int)), batch_size=batch_size, shuffle=True)
+    val_dataloader = DataLoader(lstm.RiverDataset(val_x, val_y.astype(int)), batch_size=batch_size, shuffle=True)
 
     if if_weight:
         num_class = df[target].nunique()
@@ -156,7 +125,7 @@ def train(device,
         loss_func = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     epochs = 500
-    es = EarlyStopper(patience=5, min_delta=0)
+    es = lstm.EarlyStopper(patience=5, min_delta=0)
     best_val_metric = 1e8
 
     for t in range(epochs):
