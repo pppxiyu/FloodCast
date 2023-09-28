@@ -80,7 +80,6 @@ def train_loop(dataloader, model, loss_func, optimizer, device):
 
         pred = model(x)
         loss = loss_func(pred, y)
-        optimizer.zero_grad()
 
         loss.backward()
         optimizer.step()
@@ -91,7 +90,7 @@ def train_loop(dataloader, model, loss_func, optimizer, device):
             print(f"loss: {loss: >7f}  [{current: >5d} / {size: >5d}]")
 
 
-def val_loop(dataloader, model, loss_func, device):
+def val_loop_legacy(dataloader, model, target_in_forward, loss_func, device):
     model.eval()
     val_loss = 0
     val_loss_f1 = 0
@@ -105,7 +104,8 @@ def val_loop(dataloader, model, loss_func, device):
             softmax_func = nn.Softmax(dim=1)
             pred = torch.argmax(softmax_func(pred), dim=1).cpu().numpy()
             pred = pred[:, [0]]
-            val_loss_f1 += f1_score(np.squeeze(y.cpu().numpy()), np.squeeze(pred), zero_division=1)
+            val_loss_f1 += f1_score(np.squeeze(y[:, target_in_forward - 1].cpu().numpy()), np.squeeze(pred),
+                                    zero_division=0)
 
     val_loss /= len(dataloader)
     print(f"Avg loss: {val_loss:>8f}")
@@ -116,22 +116,50 @@ def val_loop(dataloader, model, loss_func, device):
     return val_loss, -val_loss_f1
 
 
+def val_loop(dataloader, model, target_in_forward, loss_func, device):
+    model.eval()
+
+    with torch.no_grad():
+        x_list = []
+        y_list = []
+        for x, y in dataloader:
+            x_list.append(x)
+            y_list.append(y)
+        x = torch.cat(x_list, dim=0).to(device, dtype=torch.float)
+        y = torch.cat(y_list, dim=0).to(device, dtype=torch.int64)
+
+        pred = model(x)
+        val_loss = loss_func(pred, y).item()
+
+        softmax_func = nn.Softmax(dim=1)
+        pred = torch.argmax(softmax_func(pred), dim=1).cpu().numpy()
+        pred = pred[:, [0]]
+        val_loss_f1 = f1_score(np.squeeze(y[:, target_in_forward - 1].cpu().numpy()), np.squeeze(pred),
+                                zero_division='warn')
+
+    print(f"Avg loss: {val_loss:>8f}")
+    print(f"Avg F1 for positive class: {val_loss_f1:>8f} \n")
+
+    return val_loss, -val_loss_f1
+
+
 def train(device,
           df, train_x, train_y, val_x, val_y,
-          target, forward,
+          target, forward, target_in_forward,
           if_weight,
           batch_size, lr,
           num_lstm_layers,
           size_lstm,
           num_dense_layers,
+          cross_entropy_label_smoothing,
           trial=None,
           ):
     # USE: computation with hyperparameters for optuna tuning
     #      the computation from dataloader to obtaining trained model
     # INPUT and OUTPUT: same as train_pred()
 
-    train_dataloader = DataLoader(RiverDataset(train_x, train_y.astype(int)), batch_size=batch_size, shuffle=True)
-    val_dataloader = DataLoader(RiverDataset(val_x, val_y.astype(int)), batch_size=batch_size, shuffle=True)
+    train_dataloader = DataLoader(RiverDataset(train_x, train_y), batch_size=batch_size, shuffle=True)
+    val_dataloader = DataLoader(RiverDataset(val_x, val_y), batch_size=batch_size, shuffle=True)
 
     if if_weight:
         num_class = df[target].nunique()
@@ -151,9 +179,9 @@ def train(device,
     # train
     print("Training begins.")
     if weight_tensor is not None:
-        loss_func = nn.CrossEntropyLoss(weight=weight_tensor)
+        loss_func = nn.CrossEntropyLoss(weight=weight_tensor, label_smoothing=cross_entropy_label_smoothing)
     else:
-        loss_func = nn.CrossEntropyLoss()
+        loss_func = nn.CrossEntropyLoss(label_smoothing=cross_entropy_label_smoothing)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     epochs = 500
     es = EarlyStopper(patience=5, min_delta=0)
@@ -162,7 +190,7 @@ def train(device,
     for t in range(epochs):
         print(f"Epoch {t + 1}\n-------------------------------")
         train_loop(train_dataloader, model, loss_func, optimizer, device)
-        val_loss, val_metric = val_loop(val_dataloader, model, loss_func, device)
+        val_loss, val_metric = val_loop(val_dataloader, model, target_in_forward, loss_func, device)
 
         es.stopper(val_loss)
         if es.stop:
@@ -186,28 +214,31 @@ def train(device,
     return best_val_metric, model
 
 
-def train_w_hp(trial, device, df, train_x, train_y, val_x, val_y, target, forward, if_weight, num_rep = 1):
+def train_w_hp(trial, device, df, train_x, train_y, val_x, val_y, target, forward, target_in_forward, if_weight, num_rep = 1):
     # USE: computation with hyperparameters for optuna tuning
     #      the computation from dataloader to obtaining trained model
     # INPUT and OUTPUT: same as train_pred()
 
     batch_size = trial.suggest_int("batch_size", low=64, high=448, step=64)
-    lr = trial.suggest_float("lr", low=0.00001, high=0.01, step=0.00099)
+    lr = trial.suggest_float("lr", low=0.00001, high=0.01, step=0.000999)
 
     num_lstm_layers = trial.suggest_int("lstm_layer", low=1, high=3, step=1)
     size_lstm = trial.suggest_int("lstm_size", low=128, high=1024, step=128)
 
     num_dense_layers = trial.suggest_int("dense_layer", low=1, high=5, step=1)
 
+    cross_entropy_label_smoothing = trial.suggest_float("cross_entropy_label_smoothing", low=0, high=0.02, step=0.001)
+
     best_val_metric_ave = 0
     for i in range(num_rep):
         print("Repeat: ", i)
         best_val_metric, _ = train(device, df, train_x, train_y, val_x, val_y,
-                                   target, forward, if_weight, batch_size, lr,
+                                   target, forward, target_in_forward, if_weight, batch_size, lr,
                                    num_lstm_layers=num_lstm_layers,
                                    size_lstm = size_lstm,
                                    num_dense_layers=num_dense_layers,
-                                   trial=trial,)
+                                   cross_entropy_label_smoothing=cross_entropy_label_smoothing,
+                                   trial=trial)
         best_val_metric_ave += best_val_metric
     return best_val_metric_ave / num_rep
 
@@ -239,12 +270,13 @@ def train_pred(df,
     val_percent_cv = 0.15
 
     # parameters - tune
-    n_trials = 20
+    n_trials = 100
 
     # parameters - default model
-    num_lstm_layers = 1
-    size_lstm = 512
-    num_dense_layers = 1
+    num_lstm_layers = 2
+    size_lstm = 256
+    num_dense_layers = 3
+    cross_entropy_label_smoothing = 0.002
 
     # data
     df = (df - df.min()) / (df.max() - df.min())
@@ -316,7 +348,7 @@ def train_pred(df,
                                         )
             study.optimize(lambda trial: train_w_hp(trial, device,
                                                     df, train_x, train_y, val_x, val_y,
-                                                    target, forward, if_weight, tune_rep_num),
+                                                    target, forward, target_in_forward, if_weight, tune_rep_num),
                            n_trials=n_trials,
                            )
 
@@ -327,6 +359,7 @@ def train_pred(df,
             num_lstm_layers = best_hps['lstm_layer']
             size_lstm = best_hps['lstm_size']
             num_dense_layers = best_hps['dense_layer']
+            cross_entropy_label_smoothing = best_hps['cross_entropy_label_smoothing']
 
             # disable tune for training model using best hp
             if_tune = False
@@ -335,8 +368,8 @@ def train_pred(df,
         if not if_tune:
             _, model = train(device, df,
                              train_x, train_y, val_x, val_y,
-                             target, forward, if_weight, batch_size, lr,
-                             num_lstm_layers, size_lstm, num_dense_layers,)
+                             target, forward, target_in_forward, if_weight, batch_size, lr,
+                             num_lstm_layers, size_lstm, num_dense_layers, cross_entropy_label_smoothing)
 
             # pred
             test_x_tensor = torch.tensor(test_x).to(device, dtype=torch.float)

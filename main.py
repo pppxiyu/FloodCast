@@ -26,8 +26,9 @@ batch_size = config.batch_size
 learning_rate = config.learning_rate
 if_tune = config.if_tune
 expr_label = config.expr_label
-if_cv=config.if_cv
+if_cv = config.if_cv
 tune_rep_num = config.tune_rep_num
+weight_loss_level_discharge = config.weight_loss_level_discharge
 
 # create experiment
 current_time = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
@@ -40,13 +41,13 @@ with open("./config.py", 'rb') as src_file:
     with open(expr_dir + '/' + "./config.py", 'wb') as dst_file:
         dst_file.write(src_file.read())
 
-
 # prepare data
 data_raw = pp.data_imported_combine(
     ['./data/waterLevel_Columbus.txt', 'water_level'],
     ['./data/discharge_Columbus.txt', 'discharge'],
 )
 data = data_raw[feature_names]
+
 data = pp.data_add_target(data, threshold, forward, target_name='water_level')
 
 # models
@@ -81,18 +82,19 @@ if model_name == 'LSTM':
                               if_cv=if_cv,
                               )
 
-if model_name == 'PI-LSTM':
-    test_df = LSTM.train_pred(data,
-                              feature_names, target_name, lags, forward,
-                              target_in_forward,
-                              val_percent, test_percent,
-                              if_weight,
-                              batch_size,
-                              learning_rate,
-                              if_tune=if_tune,
-                              tune_rep_num=tune_rep_num,
-                              if_cv=if_cv,
-                              )
+if model_name == 'PILSTM':
+    test_df = PILSTM.train_pred(data,
+                                feature_names, target_name, lags, forward,
+                                target_in_forward,
+                                val_percent, test_percent,
+                                if_weight,
+                                batch_size,
+                                learning_rate,
+                                weight_loss_level_discharge,
+                                if_tune=if_tune,
+                                tune_rep_num=tune_rep_num,
+                                if_cv=if_cv,
+                                )
 
 # eval
 report_dict = ev.metric_classi_report(test_df)
