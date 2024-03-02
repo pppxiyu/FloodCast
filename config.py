@@ -1,43 +1,33 @@
-import numpy as np
+import pandas as pd
+from ast import literal_eval
 
-
-"""
-
-target_in_forward: int, starting from 1
-
-model: 'naive', 'logistics', 
-
-positive_weight: 'balanced' (only valid if 'logistics' is used for model)
-"""
-
+gauge_forecast = pd.read_csv(
+    "./outputs/USGS_gaga_filtering/gauge_forecast.csv",
+    dtype={"SITENO": str},
+)
+gauge_forecast['up_gage_names'] = gauge_forecast.apply(
+    lambda row: sorted(list(set(
+        literal_eval(row['active_up_gage_tri']) + literal_eval(row['active_up_gage_main']),
+    )), reverse=True), axis=1
+)
 
 # preprocess and create sequences
-threshold_sigma = 4
-features = ['water_level', 'discharge']
-target = 'surge'
-lags = (np.arange(4) + 1).tolist() + [95, 96, 97, 98]
-forward = [1]
-target_in_forward = 1
+target_gage = gauge_forecast['SITENO'].to_list()
+upstream_gages = gauge_forecast['up_gage_names'].to_list()
+lags = [[i + 1 for i in list(range(24))]] * len(gauge_forecast)
+forward = [[1]] * len(gauge_forecast)
 
 # model
-model = 'LSTM'
-if_weight = True # if weight the imbalanced classes
+model_name = ['pi_hodcrnn'] * len(gauge_forecast)
 
 # cv and hp tune
-if_cv = False
-if_tune = False
-tune_rep_num = 3
+if_cv = [False] * len(gauge_forecast)
+if_tune = [False] * len(gauge_forecast)
 
 # create datasets (work when cv is disabled)
-test_percent = 0.15
-val_percent = 0.15
-
-# train hp (work when tuning is disabled)
-batch_size = 64
-learning_rate = 0.003
-weight_loss_level_discharge = 3.5 # the weight of the level_discharge loss term
+test_percent = [0.21] * len(gauge_forecast)
+val_percent = [0.15] * len(gauge_forecast)
 
 # expr
-expr_label = 'LSTM'
-
-random_seed = 0
+extra_label = [''] * len(gauge_forecast)
+random_seed = [0] * len(gauge_forecast)

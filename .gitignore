@@ -8,3 +8,5 @@ outputs/
 papers/
 presentations/
 tuner/
+models_legacy/
+dataretrieval/
