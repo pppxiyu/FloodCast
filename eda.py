@@ -1,16 +1,10 @@
 import pandas as pd
 import os
-import torch
 
 import utils.preprocess as pp
-import utils.modeling as mo
-import utils.vis as vis
-
-import plotly.express as px
-import plotly.graph_objects as go
 
 
-analysis_name = 'organize_JAXA_data'
+analysis_name = 'pull_JAXA_data'
 dir_save_fig = './outputs/figs/'
 
 
@@ -85,6 +79,8 @@ if analysis_name == 'field_vs_model_all_flooding_rivers':
     pass
 
 if analysis_name == 'field_vs_model_all_flooding_rivers_vis':
+    import utils.vis as vis
+
     dir_major_flood_riv = './outputs/USGS_gaga_filtering'
     save_dir = './papers/figs'
 
@@ -100,6 +96,9 @@ if analysis_name == 'field_vs_model_all_flooding_rivers_vis':
 
 
 if analysis_name == 'field_vs_modeled':
+    import plotly.express as px
+    import plotly.graph_objects as go
+
     num_error_rate_class = 7
 
     # import data
@@ -323,6 +322,10 @@ if analysis_name == 'organize_JAXA_data':
 
 
 if analysis_name == 'line_rating_curve':
+    import torch
+    import utils.modeling as mo
+    import plotly.express as px
+
     df = data.resample('H', closed='right', label='right').mean()
 
     for filename in os.listdir('.'):
