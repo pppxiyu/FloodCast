@@ -105,7 +105,7 @@ for target_gage, upstream_gages, lags, forward, model_name, extra_label, if_tune
                 watershed = json.load(f)
             lat_list, lon_list = pp.get_bounding_grid(watershed)
             data_precip = pp.import_data_precipitation(
-                f'./data/JAXA_precipitation_data/USGS_{target_gage}/concatenated',
+                f'./data/JAXA_precipitation_data/USGS_{target_gage}',
                 lat_list, lon_list,
                 'America/New_York'
             )

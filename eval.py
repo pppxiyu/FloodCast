@@ -281,7 +281,7 @@ if analysis_name == 'line_accuracy':
         data_precip.index = data_precip.index.tz_convert('America/New_York')
     else:
         data_precip = pp.import_data_precipitation(
-            f'./data/JAXA_precipitation_data/USGS_{target_gage}/concatenated',
+            f'./data/JAXA_precipitation_data/USGS_{target_gage}',
             ['40.2', '40.3', '40.4', '40.5', '40.6'],
             ['-76.3', '-76.4', '-76.5', '-76.6', '-76.7', '-76.8'],
             'America/New_York'
