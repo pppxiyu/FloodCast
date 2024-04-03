@@ -1,5 +1,6 @@
 import utils.features as ft
 import numpy as np
+import warnings
 
 
 def train_pred(df, df_field, lags, forward, val_percent, test_percent):
@@ -30,6 +31,12 @@ def train_pred(df, df_field, lags, forward, val_percent, test_percent):
     sequences_w_index = ft.create_sequences(df_normed, lags, forward, inputs + ['index'])
     rows_with_nan = np.any(np.isnan(sequences_w_index), axis=(1, 2))
     sequences_w_index = sequences_w_index[~rows_with_nan]
+
+    # keep usable field measurements (new)
+    start_time = df_normed[df_normed['index'] == sequences_w_index[0,0,-1]].index
+    df_field = df_field[df_field.index >= start_time.strftime('%Y-%m-%d %H:%M:%S')[0]]
+    if len(df_field) < 50:
+        warnings.warn(f'Field measurement count is low. {len(df_field)} usable field visits.')
 
     # index split
     test_percent_updated, test_df_field, _ = ft.update_test_percent(df_field, df_normed,

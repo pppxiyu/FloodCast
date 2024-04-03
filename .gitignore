@@ -2,11 +2,12 @@ slurm.sbatch
 .idea/
 __pycache__/
 data/
+dataretrieval/
 docs/
 legacy/
 outputs/
 papers/
 presentations/
 tuner/
-models_legacy/
-dataretrieval/
+config_backup.pygit
+

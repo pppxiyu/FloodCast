@@ -224,8 +224,9 @@ def create_grid(anchor_geo):
     )
     grid_geo = anchor_geo[["identifier", "cell"]]
     grid_geo = grid_geo.set_geometry("cell")
-    grid_geo = grid_geo.set_crs("epsg:4326")
+    grid_geo = grid_geo.set_crs("epsg:4326") # 32633
     grid_geo["area"] = grid_geo.geometry.area
+    # grid_geo = grid_geo.to_crs("epsg:4326")
     return grid_geo
 
 
@@ -282,7 +283,7 @@ def count_active_USGS_up_gage(
     return pd.Series([len(up_gage_geo_select), up_gage_geo_select['SITENO'].to_list()])
 
 
-analysis = "generate_river_adjacency_gauge"
+analysis = "calculate_area_in_watershed"
 dir_rivers = "./data/HydroRIVERS_v10_na_shp/HydroRIVERS_v10_na_shp/HydroRIVERS_v10_na_selected_mainstream.shp"
 dir_all_USGS_gauges = "data/USGS_gage_geo/NWISMapperExport.shp"
 
@@ -779,6 +780,143 @@ if analysis == "generate_river_adjacency_gauge":
                 columns=[i.split("-")[1] for i in list(gage_graph_sorted.nodes)],
             )
             adj_matrix_df.to_csv(dir_save + f"/adj_matrix.csv")
+
+if analysis == 'pull_basin':
+    import pandas as pd
+    from ast import literal_eval
+    import os
+    import requests
+    import json
+    import geopandas as gpd
+    import matplotlib.pyplot as plt
+
+    gauge_forecast = pd.read_csv(
+        "./outputs/USGS_gaga_filtering/gauge_forecast.csv",
+        dtype={"SITENO": str},
+    )
+    gauge_forecast['up_gage_names'] = gauge_forecast.apply(
+        lambda row: sorted(list(set(
+            literal_eval(row['active_up_gage_tri']) + literal_eval(row['active_up_gage_main']),
+            )), reverse=True), axis=1
+    )
+    working_dir_USGS_basin = './data/USGS_basin_geo'
+    source = 'NLDI'
+
+    states_abbr = {
+        "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA",
+        "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE", "Florida": "FL", "Georgia": "GA",
+        "Hawaii": "HI", "Idaho": "ID", "Illinois": "IL", "Indiana": "IN", "Iowa": "IA",
+        "Kansas": "KS", "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD",
+        "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN", "Mississippi": "MS", "Missouri": "MO",
+        "Montana": "MT", "Nebraska": "NE", "Nevada": "NV", "New Hampshire": "NH", "New Jersey": "NJ",
+        "New Mexico": "NM", "New York": "NY", "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH",
+        "Oklahoma": "OK", "Oregon": "OR", "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC",
+        "South Dakota": "SD", "Tennessee": "TN", "Texas": "TX", "Utah": "UT", "Vermont": "VT",
+        "Virginia": "VA", "Washington": "WA", "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY"
+    }
+    exist_files = [os.path.splitext(f)[0] for f in os.listdir(working_dir_USGS_basin)]
+    exist_gages = [i.split('_')[0] for i in exist_files]
+    download_files = [f for f in gauge_forecast['SITENO'].to_list() if f not in exist_gages]
+    print(f'{len(exist_files)} basin geo exist.')
+    print(f'{len(download_files)} basin geo to download.')
+    for gg in download_files:
+        info_row = gauge_forecast[gauge_forecast['SITENO'] == gg]
+
+        # get state name
+        url = (f"https://nominatim.openstreetmap.org/reverse?"
+               f"lat={info_row['LATDD_x'].iloc[0]}&lon={info_row['LONGDD_x'].iloc[0]}&format=json")
+        response = requests.get(url)
+        data = response.json()
+        state = data.get("address", {}).get("state", "State not found")
+        state = states_abbr[state]
+
+        # pull
+        if source == 'NLDI':
+            try:
+                url = (f"https://labs.waterdata.usgs.gov/api/nldi/linked-data/nwissite/USGS-{gg}/basin?f=json")
+                response = requests.get(url)
+                geojson_data = response.json()
+                with open(f'{working_dir_USGS_basin}/{gg}_basin_geo.geojson', 'w') as file:
+                    json.dump(geojson_data, file, indent=4)
+
+                # vis
+                gdf = gpd.read_file(f"{working_dir_USGS_basin}/{gg}_basin_geo.geojson")
+                gdf.plot()
+                plt.show()
+            except:
+                print(f'Data pull failed for gage {gg}.')
+                if response.status_code != 200:
+                    print(f'Fail code: {response.status_code}.')
+
+        elif source == 'streamstatics':
+            try:
+                # streamstats
+                url = (f"https://streamstats.usgs.gov/streamstatsservices/watershed.geojson?"
+                       f"rcode={state}&"
+                       f"xlocation={info_row['LONGDD_x'].iloc[0]}&"
+                       f"ylocation={info_row['LATDD_x'].iloc[0]}&"
+                       f"crs=4326&"
+                       f"includeparameters=true&"
+                       f"includeflowtypes=true&"
+                       f"includefeatures=true&"
+                       f"simplify=true")
+                response = requests.get(url)
+                geojson_data = response.json()
+                geojson_data = geojson_data['featurecollection'][1]['feature']
+                with open(f'{working_dir_USGS_basin}/{gg}_basin_geo.geojson', 'w') as file:
+                    json.dump(geojson_data, file, indent=4)
+
+                # vis
+                gdf = gpd.read_file(f'{working_dir_USGS_basin}/{gg}_basin_geo.geojson')
+                gdf.plot()
+                plt.show()
+
+            except:
+                print(f'Data pull failed for gage {gg}.')
+                if response.status_code != 200:
+                    print(f'Fail code: {response.status_code}.')
+
+if analysis == 'calculate_area_in_watershed':
+    import pandas as pd
+    import geopandas as gpd
+    from ast import literal_eval
+    import json
+    from shapely.geometry import Point
+    from shapely import Polygon
+    import matplotlib.pyplot as plt
+
+    import utils.preprocess as pp
+
+    gauge_forecast = pd.read_csv(
+        "./outputs/USGS_gaga_filtering/gauge_forecast.csv",
+        dtype={"SITENO": str},
+    )
+    gauge_forecast['up_gage_names'] = gauge_forecast.apply(
+        lambda row: sorted(list(set(
+            literal_eval(row['active_up_gage_tri']) + literal_eval(row['active_up_gage_main']),
+            )), reverse=True), axis=1
+    )
+
+    for gg in gauge_forecast['SITENO']:
+        dir_basin = "./data/USGS_basin_geo"
+        dir_save = f"./outputs/USGS_{gg}/adj_matrix_USGS_{gg}"
+
+        basin_geo = gpd.read_file(f"{dir_basin}/{gg}_basin_geo.geojson")
+
+        with open(f'./data/USGS_basin_geo/{gg}_basin_geo.geojson', 'r') as f:
+            watershed = json.load(f)
+        lat_list, lon_list = pp.get_bounding_grid(watershed)
+
+        # anchor points and create grid
+        anchor_geo = create_anchor_points(lat_list, lon_list)
+        grid_geo = create_grid(anchor_geo)
+
+        # filter grid using basin and create virtual gages
+        _ = create_adjusted_centers(grid_geo, basin_geo, dir_save)
+
+        # check
+        saved_ratio = pd.read_csv(f'./outputs/USGS_{gg}/adj_matrix_USGS_{gg}/area_in_boundary_ratio.csv')
+        assert saved_ratio['updated_area_ratio'].between(0, 1).all(), 'Ratio exceeds 0-1.'
 
 
 if analysis == "generate_river_adjacency_precip":

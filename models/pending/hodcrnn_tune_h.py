@@ -7,7 +7,7 @@ import utils.features as ft
 import utils.modeling as mo
 import utils.preprocess as pp
 
-from models.baselines.hodcrnn_tune_o import process_tune_data
+from utils.features import process_tune_data
 
 
 def encoder(model, device, x_dis):

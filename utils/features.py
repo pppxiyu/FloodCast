@@ -13,6 +13,8 @@ import torch
 
 import utils.preprocess as pp
 
+from sklearn.linear_model import LinearRegression
+
 
 def _get_32_bit_dtype(x):
     dtype = x.dtype
@@ -113,7 +115,7 @@ def create_sequences(df, lag, forward, feature_list, target=[]):
     for v in (target + feature_list):
         df_lag = add_lags(df, lags=lag_update, column=v)[0]
         # df_lag = df_lag.dropna()
-        df_lag = df_lag[len(lag):]
+        df_lag = df_lag[lag_update[-1]:]
 
         # make up for the missing rows to keep rows consecutive
         minute_delta = df_lag.index.to_series().diff().mode()[0].total_seconds() / 60
@@ -323,3 +325,143 @@ def filter_time_df_field(df_field, x_pred_o, time_begin='2016-01-01'):
     x_pred_o = df_field['pred_level'].values[:, np.newaxis]
     df_field = df_field.set_index('date_time')
     return x_pred_o, df_field, df_field_index
+
+
+def process_tune_data(
+        df_field, df_normed,
+        sequences_w_index,
+        val_percent, test_percent,
+        forward,
+):
+    # number of nodes
+    num_nodes = len([col for col in df_normed.columns if '_0006' in col]) / 2
+    assert num_nodes.is_integer(), f"The number of nodes {num_nodes} is not an integer."
+    num_nodes = int(num_nodes)
+
+    # index split
+    test_percent_updated, test_df_field, num_test_sequences = update_test_percent(df_field, df_normed,
+                                                                                  sequences_w_index, test_percent)
+    x = sequences_w_index[:, :, :-1][:, :-1, :]
+    dataset_index = create_index_4_cv(x, False, None,
+                                      val_percent, test_percent_updated, None, None)  # codes for cv is not revised
+
+    # data for base model
+    x = sequences_w_index[:, :, :-1][:, :-len(forward), :]  # hard coded here
+    y = sequences_w_index[:, :, :-1][:, -len(forward):, :]  # hard coded here
+    y_index = sequences_w_index[:, :, [-1]][:, -len(forward):, :]  # hard coded here
+
+    test_x = x[dataset_index[0]['test_index'], :, :][:, :, num_nodes:]
+    test_y = y[dataset_index[0]['test_index'], :][:, :, :num_nodes * 2]
+    test_y_index = y_index[dataset_index[0]['test_index'], :, 0]
+    assert num_test_sequences == test_y.shape[0], 'Test sets inconsistency.'
+
+    train_df_field, val_df_field = split_df_field(df_field, test_df_field, val_percent, test_percent_updated)
+    train_df_field, val_df_field = filter_df_field(train_df_field, val_df_field,
+                                                   df_normed, sequences_w_index[:, -1, -1])
+    train_index_seq_field, val_index_seq_field = get_sequence_indices(train_df_field, val_df_field,
+                                                                      df_normed, sequences_w_index[:, -1, -1])
+    train_df_field.insert(0, 'discharge_weights', train_df_field.pop('discharge_weights'))
+    val_df_field.insert(0, 'discharge_weights', val_df_field.pop('discharge_weights'))
+
+    train_x = x[train_index_seq_field, :, :][:, :, num_nodes:]
+    val_x = x[val_index_seq_field, :, :][:, :, num_nodes:]
+
+    return train_x, val_x, test_x, test_y_index, train_df_field, val_df_field, test_df_field
+
+
+def process_tune_data_2(
+        df_field, df_normed,
+        sequences_w_index,
+        val_percent, test_percent,
+        forward,
+):
+    # number of nodes
+    num_nodes = len([col for col in df_normed.columns if '_0006' in col]) / 2
+    assert num_nodes.is_integer(), f"The number of nodes {num_nodes} is not an integer."
+    num_nodes = int(num_nodes)
+
+    # index split
+    test_percent_updated, test_df_field, num_test_sequences = update_test_percent(df_field, df_normed,
+                                                                                  sequences_w_index, test_percent)
+    x = sequences_w_index[:, :, :-1][:, :-1, :]
+    dataset_index = create_index_4_cv(x, False, None,
+                                      val_percent, test_percent_updated, None, None)  # codes for cv is not revised
+
+    # data for base model
+    x = sequences_w_index[:, :, :-1][:, :-len(forward), :]  # hard coded here
+    y = sequences_w_index[:, :, :-1][:, -len(forward):, :]  # hard coded here
+    y_index = sequences_w_index[:, :, [-1]][:, -len(forward):, :]  # hard coded here
+
+    test_x = x[dataset_index[0]['test_index'], :, :][:, :, num_nodes:]
+    test_y = y[dataset_index[0]['test_index'], :][:, :, :num_nodes * 2]
+    test_y_index = y_index[dataset_index[0]['test_index'], :, 0]
+    assert num_test_sequences == test_y.shape[0], 'Test sets inconsistency.'
+
+    train_df_field, val_df_field = split_df_field(df_field, test_df_field, val_percent, test_percent_updated)
+    train_df_field, val_df_field = filter_df_field(train_df_field, val_df_field,
+                                                   df_normed, sequences_w_index[:, -1, -1])
+    train_index_seq_field, val_index_seq_field = get_sequence_indices(train_df_field, val_df_field,
+                                                                      df_normed, sequences_w_index[:, -1, -1])
+    train_df_field.insert(0, 'discharge_weights', train_df_field.pop('discharge_weights'))
+    val_df_field.insert(0, 'discharge_weights', val_df_field.pop('discharge_weights'))
+
+    x = x[:, :, num_nodes:]
+    y = y[:, :, len([col for col in df_normed if "_weights" in col])]
+
+    return x, y, train_index_seq_field, val_index_seq_field
+
+
+def remove_base_error(target_indexes, forward, pred, y):
+    pred_error_list = []
+    for i in target_indexes:
+        prior_pred = pred[: (i - forward[0]), :]
+        prior_true = y[: (i - forward[0]), :]
+        prior_error = prior_pred - prior_true
+
+        if prior_pred.shape[0] >= 100:
+            model_res = LinearRegression()
+            prior_error_x = prior_error[: - forward[0]]
+            prior_error_y = prior_error[forward[0]:]
+            model_res.fit(
+                prior_error_x,
+                prior_error_y,
+                # weighting
+            )
+            pred_error = model_res.predict(prior_error[-1:])
+            pred_error_list.append(pred_error[0, 0])
+        else:
+            pred_error_list.append(0)
+    return pred_error_list
+
+
+def remove_test_base_error(test_df, test_df_full, forward):
+
+    pred_error_list = []
+    for t in test_df['index']:
+        test_df_full_clip = test_df_full[
+            (test_df_full.index <= (t - pd.to_timedelta(forward[0], unit='h')))
+            # & (test_df_full.index >= (t - pd.to_timedelta(forward[0] + 5000, unit='h') ))
+        ]
+        if len(test_df_full_clip) > 10:
+
+            prior_pred = test_df_full_clip['pred_water_level'].to_numpy()
+            prior_true = test_df_full_clip['water_level'].to_numpy()
+            prior_error = prior_pred - prior_true
+
+            # linear
+            model_res = LinearRegression()
+            prior_error_x = prior_error[: - forward[0]]
+            prior_error_y = prior_error[forward[0]:]
+            model_res.fit(
+                prior_error_x[:, np.newaxis],
+                prior_error_y[:, np.newaxis],
+                # weighting
+            )
+            pred_error = model_res.predict(prior_error[-1:][:, np.newaxis])
+            pred_error_list.append(pred_error[0, 0])
+
+        else:
+            pred_error_list.append(0)
+
+    return pred_error_list
+

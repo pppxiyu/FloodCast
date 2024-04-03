@@ -14,6 +14,8 @@ import optuna
 import os
 import math
 
+from models.pi_hodcrnn import get_rc_shifts
+
 
 class RiverDataset(Dataset):
     def __init__(self, x, y):
@@ -134,6 +136,7 @@ def train(device,
           trial=None,
           remove_best_model=True,
           add_val_loss_func=None,
+          verbose=True,
           ):
     # USE: computation with hyperparameters for optuna tuning
     #      the computation from dataloader to obtaining trained model
@@ -160,13 +163,14 @@ def train(device,
     best_val_metric = 1e8
 
     for t in range(epochs):
-        print(f"Epoch {t + 1}\n-------------------------------")
+        if verbose:
+            print(f"Epoch {t + 1}\n-------------------------------")
         train_loop(
             train_dataloader, model, optimizer, device,
         )
         val_loss, val_metric = val_loop(val_dataloader, train_dataloader,
                                         model, target_in_forward,
-                                        device)
+                                        device,)
         if add_val_loss_func:
             val_loss, val_metric = val_loop(val_dataloader, train_dataloader,
                                             model, target_in_forward,
@@ -192,7 +196,8 @@ def train(device,
     if remove_best_model:
         os.remove(f'best_model_{model_name}.pth')
 
-    print("Training done.")
+    if verbose:
+        print("Training done.")
 
     return best_val_metric, model
 
@@ -709,7 +714,10 @@ def approx_rc(row, df, buffer_len=2, time_col_name='date_time', level_col_name='
     df_buffer = df[(df.index > t_lower_bound) & (df.index < t_upper_bound)]
     df_buffer['diff'] = df_buffer[df_wl_col[0]] - row[level_col_name]
     df_diff = df_buffer.abs().sort_values(by=['diff'])
-    if df_diff.iloc[0]['diff'] < 1e-5:
+    df_diff = df_diff[~df_diff.isna().any(axis=1)]
+    assert len(df_diff) >= 5, 'Too much nan value when approx_rc.'
+
+    if (df_diff.iloc[0]['diff'] < 1e-5) & (~np.isnan(df_diff.iloc[0][df_dis_col[0]])):
         return df_diff.iloc[0][df_dis_col[0]]
     else:
         print(f'Bad luck! Exactly same water level within {buffer_len} days buffer is not found. Check it!')
@@ -751,3 +759,26 @@ def convert_array_w_rc(pred_wl, df_w_time, df_raw):
     pred_dis = df_w_time['pred_dis'].values
     return pred_dis
 
+
+def apply_rc_shifts(df, convert_from='pred_water_level', filter=None):
+    rc_shift_record, rc_shift_dict = get_rc_shifts()
+    rc_shift_record.loc[len(rc_shift_record) - 1, 'End Time'] = pd.to_datetime('2024-01-03 00:00').tz_localize('America/New_York')
+    for index, row in rc_shift_record.iterrows():
+        curve_num = row['Curve Number']
+        shift_num = row['Shift number']
+        rc = rc_shift_dict[(curve_num, shift_num)]
+
+        start_t = row['Start Time']
+        end_t = row['End Time']
+        df_cut = df[(df.index >= start_t) & (df.index < end_t)].copy()
+        if df[convert_from].dtype == np.float32:
+            df_cut[convert_from] = df_cut[convert_from].astype(np.float64).round(2)
+        df_cut = df_cut.reset_index()
+        df_cut = df_cut.merge(rc, how='left', left_on=convert_from, right_on='gauge height')
+        df_cut = df_cut.set_index('index')
+
+        if filter is not None:
+            df_cut.loc[~df_cut.index.isin(filter.index), ['discharge']] = np.nan
+
+        df.loc[(df.index >= start_t) & (df.index < end_t), ['pred']] = df_cut['discharge'].to_list()
+    return df

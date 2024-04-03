@@ -6,7 +6,7 @@ import torch
 from torch import nn
 import torch.nn.init as init
 import optuna
-from models.baselines.hodcrnn import DConv
+from models.hodcrnn import DConv
 
 import utils.features as ft
 import utils.modeling as mo
@@ -357,7 +357,7 @@ class HeteroDCRNN(nn.Module):
         edge_weight_precip2dis = torch.from_numpy(edge_weight_precip2dis).float().to(x_dis.device)
 
         # projection
-        # x_dis_proj = self.proj_dis(x_dis)
+        # x_dis_proj = self.proj_dis(x)
         # x_precip_proj = self.proj_precip(x_precip)
         x_dis_proj = x_dis
         x_precip_proj = x_precip

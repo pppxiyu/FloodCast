@@ -12,6 +12,12 @@ import utils.features as ft
 import utils.modeling as mo
 import utils.preprocess as pp
 
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import PowerTransformer
+
+import warnings
+
 expr_dir_global = ''
 best_score_optuna_tune = 1e10
 
@@ -209,34 +215,43 @@ class SingleDCRNN(torch.nn.Module):
 class HomoDCRNN(nn.Module):
     def __init__(
             self,
-            feat_in_dis,
+            feat_in,
             K, feat_out_dcrnn,
-            num_readout_layer, num_node_aggr,
+            num_readout_layer, num_node,
             num_forward=1
     ):
         super().__init__()
-
-        self.sdcrnn = SingleDCRNN(feat_in_dis, feat_out_dcrnn, K, bias=True)
-
+        self.sdcrnn = SingleDCRNN(feat_in, feat_out_dcrnn, K, bias=True)
+        self.gru = nn.GRU(feat_in, feat_out_dcrnn, batch_first=True)
         self.num_forward = num_forward
-        self.dense_readout = mo.stack_dense_layers(feat_out_dcrnn, num_forward * 1, num_readout_layer)
+        self.dense_readout = mo.stack_dense_layers(feat_out_dcrnn * 2, num_forward * 1, num_readout_layer)
+        self.num_node = num_node
 
-    def forward(self, x_dis):
+    def forward(self, x):
 
         # data prep
+        x_precip = x[:, :, self.num_node:]
+        x_dis = x[:, :, :self.num_node]
         x_dis = x_dis.unsqueeze(-1)
 
-        edge_index_dis = np.vstack(np.where(self.adj.to_numpy() != 0))
+        edge_index_dis = np.vstack(np.where(self.adj_dis.to_numpy() != 0))
         edge_index_dis = torch.from_numpy(edge_index_dis).to(torch.long).to(x_dis.device)
-        edge_weight_dis = self.adj.to_numpy()[np.where(self.adj != 0)[0], np.where(self.adj != 0)[1]]
+        edge_weight_dis = self.adj_dis.to_numpy()[np.where(self.adj_dis != 0)[0], np.where(self.adj_dis != 0)[1]]
         edge_weight_dis = torch.from_numpy(edge_weight_dis).float().to(x_dis.device)
 
         # diffusion convolution rnn
-        h = None
+        h_dis = None
         for i in range(x_dis.shape[1]):
-            h = self.sdcrnn(x_dis[:, i, :, :], edge_index_dis, edge_weight_dis, h)
+            h_dis = self.sdcrnn(x_dis[:, i, :, :], edge_index_dis, edge_weight_dis, h_dis)
+
+        # precip embedding
+        o, h_precip = self.gru(x_precip)
+        h_precip = h_precip[0, :, :, ].unsqueeze(1)
+        # h_precip = torch.cat([h_precip] * self.num_node, dim=1)
 
         # readout
+        # h = torch.concat((h_dis, h_precip), dim=-1)
+        h = torch.concat((h_dis[:, 0:1, :], h_precip), dim=-1)
         out = self.dense_readout(h)
 
         return out
@@ -254,8 +269,10 @@ def train_loop(dataloader, model, optimizer, device):
 
         x, y = x.to(device, dtype=torch.float), y.to(device)
 
-        y_target = y[:, 0, 5:].to(dtype=torch.float)  # hard coded
-        y_target_weights = y[:, 0, :5].to(dtype=torch.float)  # hard coded
+        # y_target = y[:, 0, 5:10].to(dtype=torch.float)  # hard coded
+        # y_target_weights = y[:, 0, :5].to(dtype=torch.float)  # hard coded
+        y_target = y[:, 0, 5:6].to(dtype=torch.float)  # hard coded
+        y_target_weights = y[:, 0, 0:1].to(dtype=torch.float)  # hard coded
 
         pred = model(x)
         pred = pred[:, :, 0]
@@ -288,7 +305,8 @@ def val_loop(dataloader, train_dataloader, model, target_in_forward, device, add
         x = torch.cat(x_list, dim=0).to(device, dtype=torch.float)
         y = torch.cat(y_list, dim=0).to(device)
 
-        y_target = y[:, 0, 5:].to(dtype=torch.float)
+        # y_target = y[:, 0, 5:10].to(dtype=torch.float)
+        y_target = y[:, 0, 5:6].to(dtype=torch.float)
         # y_level_weights = y[:, :, 0].to(dtype=torch.float)
         pred = model(x)
         pred = pred[:, :, 0]
@@ -310,30 +328,28 @@ def val_loop(dataloader, train_dataloader, model, target_in_forward, device, add
 
 def train_w_hp(
         trial, device, train_x, train_y, val_x, val_y,
-        feat_in_dis, k,
+        feat_in, k,
         adj_dis,
         target_in_forward, num_nodes, num_rep=1
 ):
 
-    batch_size = trial.suggest_int("batch_size", low=160, high=224, step=32)
-    lr = trial.suggest_float("lr", low=0.0015, high=0.0017, step=0.0001)
-    feat_out = trial.suggest_int("feat_out", low=48, high=80, step=16)
-    layer_out = trial.suggest_int("layer_out", low=2, high=3, step=1)
+    batch_size = trial.suggest_int("batch_size", low=128, high=256, step=64)
+    lr = trial.suggest_float("lr", low=0.0003, high=0.0013, step=0.0002)
+    feat_out = trial.suggest_int("feat_out", low=16, high=80, step=32)
+    layer_out = trial.suggest_int("layer_out", low=2, high=4, step=1)
 
     val_metric_ave = 0
     for i in range(num_rep):
         print("Repeat: ", i)
 
-        model = HomoDCRNN(feat_in_dis, k, feat_out, layer_out, num_nodes)
+        model = HomoDCRNN(feat_in, k, feat_out, layer_out, num_nodes)
 
         model.adj_dis = adj_dis
-        if k == 1:
-            model.name = 'MultiGRU'
-        else:
-            model.name = 'DisPredHomoDCRNN'
+        model.name = 'DisPredHomoDCRNN5'
         optim = torch.optim.Adam([
             {'params': model.sdcrnn.parameters(), 'lr': lr},
             {'params': model.dense_readout.parameters(), 'lr': lr},
+            {'params': model.gru.parameters(), 'lr': lr},
         ])
 
         val_metric, _ = mo.train(
@@ -347,7 +363,6 @@ def train_w_hp(
     objective_value = val_metric_ave / num_rep
 
     global best_score_optuna_tune
-    label = 'HODCRNN' if k > 1 else 'MGRU'
     if objective_value < best_score_optuna_tune:
         best_score_optuna_tune = objective_value
         torch.save(
@@ -355,7 +370,7 @@ def train_w_hp(
                 'model': model,
                 'optimizer': optim.state_dict(),
             },
-            f'{expr_dir_global}/best_{label}_optuna_tune_{objective_value}.pth'
+            f'{expr_dir_global}/best_HODCRNN_optuna_tune_{objective_value}.pth'
         )
     return objective_value
 
@@ -373,23 +388,41 @@ def train_pred(
     n_trials = 50
     tune_rep_num = 1
 
-    # parameters - default model (for hodcrnn)
-    batch_size = 128
-    lr = 0.0018
-    feat_in_dis = 1
-    k = 2
-    feat_out = 64
-    layer_out = 2
-    num_nodes = 5
+    # # parameters - default model, lead time 1
+    # batch_size = 192
+    # lr = 0.0009
+    # feat_out = 80
+    # layer_out = 2
+    #
+    # # parameters - default model, lead time 2
+    # batch_size = 192
+    # lr = 0.0013
+    # feat_out = 80
+    # layer_out = 2
 
-    # # parameters - default model (for mgru)
-    # batch_size = 256
-    # lr = 0.0012
-    # feat_in_dis = 1
-    # k = 1
-    # feat_out = 64
-    # layer_out = 3
-    # num_nodes = 5
+    # parameters - default model, lead time 3
+    batch_size = 192
+    lr = 0.0009
+    feat_out = 80
+    layer_out = 4
+
+    # # parameters - default model, lead time 4
+    # batch_size = 192
+    # lr = 0.0009
+    # feat_out = 48
+    # layer_out = 2
+    #
+    # # parameters - default model, lead time 5
+    # batch_size = 128
+    # lr = 0.0007
+    # feat_out = 80
+    # layer_out = 4
+
+
+    k = 3
+    feat_in = 1
+    num_nodes = 5
+    scaler_power = PowerTransformer
 
     # other parameters
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -398,28 +431,65 @@ def train_pred(
     adj_dis = pd.read_csv(f'{adj_matrix_dir}/adj_matrix.csv', index_col=0)
 
     df = df.resample('H', closed='right', label='right').mean()
-    df_dis_normed = (df - df.min()) / (df.max() - df.min())
+    scaler_stream = scaler_power()
+    df_dis_normed = pd.DataFrame(scaler_stream.fit_transform(df), columns=df.columns, index=df.index)
     dis_cols = [col for col in df.columns if col.endswith('00060')]
     df_dis_normed = df_dis_normed[dis_cols]
     for col in df_dis_normed:
         if col.endswith('00060'):
             df_dis_normed = pp.sample_weights(df_dis_normed, col, if_log=True)
 
+    # precip
+    area_ratio_precip = pd.read_csv(f'{adj_matrix_dir}/area_in_boundary_ratio.csv')
+    area_ratio_precip['lat'] = area_ratio_precip['identifier'].str.split('_').str.get(0)
+    area_ratio_precip['lat'] = area_ratio_precip['lat'].astype(float)
+    area_ratio_precip['lat'] = area_ratio_precip['lat'] - 0.05
+    area_ratio_precip['lon'] = area_ratio_precip['identifier'].str.split('_').str.get(1)
+    area_ratio_precip['lon'] = area_ratio_precip['lon'].astype(float)
+    area_ratio_precip['lon'] = area_ratio_precip['lon'] - 0.05
+    area_ratio_precip['label'] = area_ratio_precip.apply(
+        lambda x: f"clat{round(x['lat'], 1)}_clon{round(x['lon'], 1)}",
+        axis=1,
+    )
+    df_precip_scaled = df_precip[area_ratio_precip['label'].to_list()]
+    for col in df_precip_scaled.columns:
+        df_precip_scaled.loc[:, col] = df_precip_scaled[col] * area_ratio_precip[
+            area_ratio_precip['label'] == col
+            ]['updated_area_ratio'].iloc[0]
+    df_precip_scaled = df_precip_scaled.sum(axis=1).to_frame()
+    scaler_precip = scaler_power()
+    df_precip_normed = pd.DataFrame(
+        scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index
+    )
+    df_precip_normed = df_precip_normed.rename(columns={0:'ave_precip'})
+
+    df_normed = pd.concat([
+        df_dis_normed,
+        df_precip_normed
+    ], axis=1)
+
     # inputs
     target_in_forward = 1
     inputs = (
-            sorted([col for col in df_dis_normed if "_weights" in col], reverse=True)
+            sorted([col for col in df_normed if "_weights" in col], reverse=True)
             + sorted([col for col in dis_cols if "_weights" not in col], reverse=True)
+            + [df_precip_normed.columns[0]]
     )
 
     # make sequences and remove samples with nan values
-    df_dis_normed['index'] = range(len(df_dis_normed))
-    sequences_w_index = ft.create_sequences(df_dis_normed, lags, forward, inputs + ['index'])
+    df_normed['index'] = range(len(df_normed))
+    sequences_w_index = ft.create_sequences(df_normed, lags, forward, inputs + ['index'])
     rows_with_nan = np.any(np.isnan(sequences_w_index), axis=(1, 2))
     sequences_w_index = sequences_w_index[~rows_with_nan]
 
+    # keep usable field measurements (new)
+    start_time = df_normed[df_normed['index'] == sequences_w_index[0,0,-1]].index
+    df_field = df_field[df_field.index >= start_time.strftime('%Y-%m-%d %H:%M:%S')[0]]
+    if len(df_field) < 50:
+        warnings.warn(f'Field measurement count is low. {len(df_field)} usable field visits.')
+
     # index split for major data
-    test_percent_updated, test_df_field, num_test_sequences = ft.update_test_percent(df_field, df_dis_normed,
+    test_percent_updated, test_df_field, num_test_sequences = ft.update_test_percent(df_field, df_normed,
                                                                                      sequences_w_index, test_percent)
     x = sequences_w_index[:, :, :-1][:, :-1, :]
     dataset_index = ft.create_index_4_cv(x, False, None,
@@ -441,28 +511,18 @@ def train_pred(
     if num_test_sequences != test_y.shape[0]:
         raise ValueError('Test sets inconsistency.')
 
-    # # delete after developing
-    # train_x = train_x[-train_x.shape[0] // 5:, :, :]
-    # train_y = train_y[-train_y.shape[0] // 5:, :, :]
-    # val_x = val_x[-val_x.shape[0] // 5:, :, :]
-    # val_y = val_y[-val_y.shape[0] // 5:, :, :]
-
     # train with hp tuning
     if if_tune:
-        if k == 1:
-            tag = 'mgru'
-        else:
-            tag = 'hodcrnn'
+        tag = 'hodcrnn'
         study = optuna.create_study(direction="minimize",
                                     storage=f"sqlite:///tuner/db_dis_pred_{tag}.sqlite3",
-                                    # optuna-dashboard sqlite:///tuner/db_dis_pred_mgru.sqlite3 --port 8082
                                     # optuna-dashboard sqlite:///tuner/db_dis_pred_hodcrnn.sqlite3 --port 8083
                                     study_name=f"dis_pred_{tag}_" + datetime.now().strftime("%Y-%m-%d-%H-%M-%S"))
         study.optimize(
             lambda trial: train_w_hp(
                 trial, device,
                 train_x, train_y, val_x, val_y,
-                feat_in_dis, k,
+                feat_in, k,
                 adj_dis,
                 target_in_forward, num_nodes, tune_rep_num),
             n_trials=n_trials,
@@ -481,38 +541,34 @@ def train_pred(
     # train without hp tuning
     if not if_tune:
 
-        model = HomoDCRNN(feat_in_dis, k, feat_out, layer_out, num_nodes)
+        # model = HomoDCRNN(feat_in, k, feat_out, layer_out, num_nodes)
 
-        # saved = torch.load('outputs/USGS_01573560/best_dis_HODCRNN_optuna_tune_0.0002539197448641062.pth')
-        # model = saved['model']
-        # model.to(device)
-        # model.name = 'DisPredHomoDCRNN_tune'
-        # model.dense_flex_1 = None
-        # model.dense_flex_2 = None
+        saved = torch.load('./outputs/experiments/hodcrnn_5__2024-03-13-12-48-00/best_HODCRNN_optuna_tune_0.029401084408164024.pth')
+        model = saved['model']
+        model.eval()
+        model.to(device)
+        model.name = 'DisPredHomoDCRNN_tune'
 
-        if k == 1:
-            model.name = 'MultiGRU'
-        else:
-            model.name = 'DisPredHomoDCRNN'
-        model.adj = adj_dis
-        optim = torch.optim.Adam([
-            {'params': model.sdcrnn.parameters(), 'lr': lr},
-            {'params': model.dense_readout.parameters(), 'lr': lr},
-        ])
-
-        _, model = mo.train(device,
-                            train_x, train_y, val_x, val_y,
-                            target_in_forward,
-                            model, train_loop, val_loop, batch_size, lr,
-                            optim=optim)
-        torch.save(model, f'{expr_dir}/model.pth')
+        # model.name = 'DisPredHomoDCRNN5'
+        # model.adj_dis = adj_dis
+        # optim = torch.optim.Adam([
+        #     {'params': model.sdcrnn.parameters(), 'lr': lr},
+        #     {'params': model.dense_readout.parameters(), 'lr': lr},
+        #     {'params': model.gru.parameters(), 'lr': lr},
+        # ])
+        #
+        # _, model = mo.train(device,
+        #                     train_x, train_y, val_x, val_y,
+        #                     target_in_forward,
+        #                     model, train_loop, val_loop, batch_size, lr,
+        #                     optim=optim)
+        # torch.save(model, f'{expr_dir}/model.pth')
 
         pred = mo.pred_4_test_hodcrnn(model, test_x, target_in_forward, device)
         pred = pred[:, 0, :]
-        pred = (
-                pred * (df[f"{target_gage}_00060"].max() - df[f"{target_gage}_00060"].min())
-                + df[f"{target_gage}_00060"].min()
-        )
+        scaler_pred = scaler_power()
+        scaler_pred.fit(df[[f"{target_gage}_00060"]])
+        pred = scaler_pred.inverse_transform(pd.DataFrame(pred))[:, 0]
 
         # modeled discharge
         test_df = df.iloc[test_y_index[:, target_in_forward - 1]][[f'{target_gage}_00060', f'{target_gage}_00065']]

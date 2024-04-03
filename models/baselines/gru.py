@@ -10,41 +10,32 @@ import utils.features as ft
 import utils.modeling as mo
 import utils.preprocess as pp
 
-from models.baselines.hodcrnn import SingleDCRNN
+from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import PowerTransformer
 
+import warnings
 
 class GRU(nn.Module):
     def __init__(
             self,
-            feat_in_dis,
+            feat_in,
             feat_out,
             num_readout_layer,
+            num_out_site,
             num_forward=1
     ):
         super().__init__()
 
-        self.gru = SingleDCRNN(feat_in_dis, feat_out, 1, bias=True)
-
+        self.gru = torch.nn.GRU(feat_in, feat_out, batch_first=True)
         self.num_forward = num_forward
-        self.dense_readout = mo.stack_dense_layers(feat_out, num_forward * 1, num_readout_layer)
+        self.dense_readout = mo.stack_dense_layers(feat_out, num_forward * num_out_site, num_readout_layer)
 
-    def forward(self, x_dis):
-
-        # data prep
-        x_dis = x_dis.unsqueeze(-1)
-
-        edge_index_dis = np.vstack(np.where(self.adj_dis.to_numpy() != 0))
-        edge_index_dis = torch.from_numpy(edge_index_dis).to(torch.long).to(x_dis.device)
-        edge_weight_dis = self.adj_dis.to_numpy()[np.where(self.adj_dis != 0)[0], np.where(self.adj_dis != 0)[1]]
-        edge_weight_dis = torch.from_numpy(edge_weight_dis).float().to(x_dis.device)
-
-        h = None
-        for i in range(x_dis.shape[1]):
-            h = self.gru(x_dis[:, i, :, :], edge_index_dis, edge_weight_dis, h)
-
-        # readout
+    def forward(self, x):
+        o, h = self.gru(x)
+        h = h[0, :, :, ]
         out = self.dense_readout(h)
-        return out[:, 0, :]
+        return out.unsqueeze(1)
 
 
 def train_loop(dataloader, model, optimizer, device):
@@ -59,8 +50,10 @@ def train_loop(dataloader, model, optimizer, device):
 
         x, y = x.to(device, dtype=torch.float), y.to(device)
 
-        y_level = y[:, :, 1].to(dtype=torch.float)
-        y_level_weights = y[:, :, 0].to(dtype=torch.float)
+        # y_level = y[:, :, 5:10].to(dtype=torch.float)
+        # y_level_weights = y[:, :, :5].to(dtype=torch.float)
+        y_level = y[:, :, 5: 6].to(dtype=torch.float)
+        y_level_weights = y[:, :, 0: 1].to(dtype=torch.float)
 
         pred = model(x)
         loss = loss_func_1(pred, y_level, y_level_weights)
@@ -92,7 +85,8 @@ def val_loop(dataloader, train_dataloader, model, target_in_forward, device, add
         x = torch.cat(x_list, dim=0).to(device, dtype=torch.float)
         y = torch.cat(y_list, dim=0).to(device)
 
-        y_level = y[:, :, 1].to(dtype=torch.float)
+        # y_level = y[:, :, 5:10].to(dtype=torch.float)
+        y_level = y[:, :, 5:6].to(dtype=torch.float)
         # y_level_weights = y[:, :, 0].to(dtype=torch.float)
         pred = model(x)
 
@@ -113,13 +107,11 @@ def val_loop(dataloader, train_dataloader, model, target_in_forward, device, add
 
 def train_w_hp(
         trial, device, train_x, train_y, val_x, val_y,
-        feat_in_dis,
-        adj_dis,
         target_in_forward, num_rep=1
 ):
 
     batch_size = trial.suggest_int("batch_size", low=128, high=640, step=128)
-    lr = trial.suggest_float("lr", low=0.0006, high=0.0018, step=0.0004)
+    lr = trial.suggest_float("lr", low=0.0002, high=0.0018, step=0.0004)
     feat_out = trial.suggest_int("feat_out", low=16, high=64, step=16)
     layer_out = trial.suggest_int("layer_out", low=2, high=3, step=1)
 
@@ -127,8 +119,7 @@ def train_w_hp(
     for i in range(num_rep):
         print("Repeat: ", i)
 
-        model = GRU(feat_in_dis, feat_out, layer_out)
-        model.adj_dis = adj_dis
+        model = GRU(train_x.shape[2], feat_out, layer_out, 1)
         model.name = 'DisPredGRU'
         optim = torch.optim.Adam([
             {'params': model.gru.parameters(), 'lr': lr},
@@ -157,36 +148,76 @@ def train_pred(
     tune_rep_num = 1
 
     # parameters - default model
-    batch_size = 256
+    batch_size = 640
     lr = 0.001
-    feat_in_dis = 1
-    feat_out = 64
+    feat_out = 16
     layer_out = 2
 
     # other parameters
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    scaler = PowerTransformer
 
     # data
-    adj_dis = pd.read_csv(f'{adj_matrix_dir}/adj_matrix.csv', index_col=0)
-
     df = df.resample('H', closed='right', label='right').mean()
-    df_dis_normed = (df - df.min()) / (df.max() - df.min())
-    dis_cols = [f'{target_gage}_00060']
+    scaler_stream = scaler()
+    df_dis_normed = pd.DataFrame(scaler_stream.fit_transform(df), columns=df.columns, index=df.index)
+    dis_cols = [col for col in df.columns if col.endswith('00060')]
     df_dis_normed = df_dis_normed[dis_cols]
-    df_dis_normed = pp.sample_weights(df_dis_normed, f'{target_gage}_00060', if_log=True)
+    for col in df_dis_normed:
+        if col.endswith('00060'):
+            df_dis_normed = pp.sample_weights(df_dis_normed, col, if_log=True)
+
+    # precip
+    area_ratio_precip = pd.read_csv(f'{adj_matrix_dir}/area_in_boundary_ratio.csv')
+    area_ratio_precip['lat'] = area_ratio_precip['identifier'].str.split('_').str.get(0)
+    area_ratio_precip['lat'] = area_ratio_precip['lat'].astype(float)
+    area_ratio_precip['lat'] = area_ratio_precip['lat'] - 0.05
+    area_ratio_precip['lon'] = area_ratio_precip['identifier'].str.split('_').str.get(1)
+    area_ratio_precip['lon'] = area_ratio_precip['lon'].astype(float)
+    area_ratio_precip['lon'] = area_ratio_precip['lon'] - 0.05
+    area_ratio_precip['label'] = area_ratio_precip.apply(
+        lambda x: f"clat{round(x['lat'], 1)}_clon{round(x['lon'], 1)}",
+        axis=1,
+    )
+    df_precip_scaled = df_precip[area_ratio_precip['label'].to_list()]
+    for col in df_precip_scaled.columns:
+        df_precip_scaled.loc[:, col] = df_precip_scaled[col] * area_ratio_precip[
+            area_ratio_precip['label'] == col
+            ]['updated_area_ratio'].iloc[0]
+    df_precip_scaled = df_precip_scaled.sum(axis=1).to_frame()
+    scaler_precip = scaler()
+    df_precip_normed = pd.DataFrame(
+        scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index
+    )
+    df_precip_normed = df_precip_normed.rename(columns={0:'ave_precip'})
+
+    df_normed = pd.concat([
+        df_dis_normed,
+        df_precip_normed
+    ], axis=1)
 
     # inputs
     target_in_forward = 1
-    inputs = [f'{target_gage}_00060_weights', f'{target_gage}_00060']
+    inputs = (
+            sorted([col for col in df_normed if "_weights" in col], reverse=True)
+            + sorted([col for col in dis_cols if "_weights" not in col], reverse=True)
+            + [df_precip_normed.columns[0]]
+    )
 
     # make sequences and remove samples with nan values
-    df_dis_normed['index'] = range(len(df_dis_normed))
-    sequences_w_index = ft.create_sequences(df_dis_normed, lags, forward, inputs + ['index'])
+    df_normed['index'] = range(len(df_normed))
+    sequences_w_index = ft.create_sequences(df_normed, lags, forward, inputs + ['index'])
     rows_with_nan = np.any(np.isnan(sequences_w_index), axis=(1, 2))
     sequences_w_index = sequences_w_index[~rows_with_nan]
 
+    # keep usable field measurements (new)
+    start_time = df_normed[df_normed['index'] == sequences_w_index[0,0,-1]].index
+    df_field = df_field[df_field.index >= start_time.strftime('%Y-%m-%d %H:%M:%S')[0]]
+    if len(df_field) < 50:
+        warnings.warn(f'Field measurement count is low. {len(df_field)} usable field visits.')
+
     # index split for major data
-    test_percent_updated, test_df_field, num_test_sequences = ft.update_test_percent(df_field, df_dis_normed,
+    test_percent_updated, test_df_field, num_test_sequences = ft.update_test_percent(df_field, df_normed,
                                                                                      sequences_w_index, test_percent)
     x = sequences_w_index[:, :, :-1][:, :-1, :]
     dataset_index = ft.create_index_4_cv(x, False, None,
@@ -197,22 +228,16 @@ def train_pred(
     y = sequences_w_index[:, :, :-1][:, -len(forward):, :]  # hard coded here
     y_index = sequences_w_index[:, :, [-1]][:, -len(forward):, :]  # hard coded here
 
-    train_x = x[dataset_index[0]['train_index'], :, :][:, :, 1:]  # hard coded here
-    train_y = y[dataset_index[0]['train_index'], :][:, :, :2]  # hard coded here
-    val_x = x[dataset_index[0]['val_index'], :, :][:, :, 1:]  # hard coded here
-    val_y = y[dataset_index[0]['val_index'], :][:, :, :2]  # hard coded here
-    test_x = x[dataset_index[0]['test_index'], :, :][:, :, 1:]  # hard coded here
-    test_y = y[dataset_index[0]['test_index'], :][:, :, :2]  # hard coded here
+    train_x = x[dataset_index[0]['train_index'], :, :][:, :, 5:]  # hard coded here
+    train_y = y[dataset_index[0]['train_index'], :][:, :, :]  # hard coded here
+    val_x = x[dataset_index[0]['val_index'], :, :][:, :, 5:]  # hard coded here
+    val_y = y[dataset_index[0]['val_index'], :][:, :, :]  # hard coded here
+    test_x = x[dataset_index[0]['test_index'], :, :][:, :, 5:]  # hard coded here
+    test_y = y[dataset_index[0]['test_index'], :][:, :, :]  # hard coded here
     test_y_index = y_index[dataset_index[0]['test_index'], :, 0]
 
     if num_test_sequences != test_y.shape[0]:
         raise ValueError('Test sets inconsistency.')
-
-    # delete after developing
-    train_x = train_x[-train_x.shape[0] // 5:, :, :]
-    train_y = train_y[-train_y.shape[0] // 5:, :, :]
-    val_x = val_x[-val_x.shape[0] // 5:, :, :]
-    val_y = val_y[-val_y.shape[0] // 5:, :, :]
 
     # train with hp tuning
     if if_tune:
@@ -224,8 +249,6 @@ def train_pred(
             lambda trial: train_w_hp(
                 trial, device,
                 train_x, train_y, val_x, val_y,
-                feat_in_dis,
-                adj_dis,
                 target_in_forward, tune_rep_num),
             n_trials=n_trials,
         )
@@ -242,9 +265,9 @@ def train_pred(
 
     # train without hp tuning
     if not if_tune:
-        model = GRU(feat_in_dis, feat_out, layer_out)
+        model = GRU(train_x.shape[2], feat_out, layer_out, 1)
         model.name = 'DisPredGRU'
-        model.adj_dis = adj_dis
+
         optim = torch.optim.Adam([
             {'params': model.gru.parameters(), 'lr': lr},
             {'params': model.dense_readout.parameters(), 'lr': lr},
@@ -258,10 +281,10 @@ def train_pred(
             optim=optim)
 
         pred = mo.pred_4_test_hodcrnn(model, test_x, target_in_forward, device)
-        pred = (
-                pred * (df[f"{target_gage}_00060"].max() - df[f"{target_gage}_00060"].min())
-                + df[f"{target_gage}_00060"].min()
-        )
+        pred = pred[:, :, 0]
+        scaler_pred = scaler()
+        scaler_pred.fit(df[[f"{target_gage}_00060"]])
+        pred = scaler_pred.inverse_transform(pd.DataFrame(pred))[:, 0]
 
         # modeled discharge
         test_df = df.iloc[test_y_index[:, target_in_forward - 1]][[f'{target_gage}_00060', f'{target_gage}_00065']]

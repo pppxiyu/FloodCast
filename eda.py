@@ -10,7 +10,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 
-analysis_name = 'batch_pull_up_gages'
+analysis_name = 'pull_JAXA_data'
 dir_save_fig = './outputs/figs/'
 
 
@@ -132,99 +132,125 @@ if analysis_name == 'pull_JAXA_data':
 
     import os
     import pandas as pd
+    import numpy as np
     from selenium import webdriver
     from selenium.webdriver.common.by import By
     from selenium.webdriver.chrome.service import Service
     from webdriver_manager.chrome import ChromeDriverManager
     import time
+    import json
+    import math
+
+    from ast import literal_eval
+
+    gauge_forecast = pd.read_csv(
+        "./outputs/USGS_gaga_filtering/gauge_forecast.csv",
+        dtype={"SITENO": str},
+    )
+    gauge_forecast['up_gage_names'] = gauge_forecast.apply(
+        lambda row: sorted(list(set(
+            literal_eval(row['active_up_gage_tri']) + literal_eval(row['active_up_gage_main']),
+            )), reverse=True), axis=1
+    )
+    # temporary selection
+    gauge_forecast = gauge_forecast[
+        (gauge_forecast['active_up_gage_num_main'] >= 3)
+        & (gauge_forecast['field_measure_count_action'] >= 10)
+        ]
 
     uid = 'rainmap'
     psd = 'Niskur+1404'
 
-    dts = pd.date_range(
-        start='1/1/2007',
-        end='01/01/2024',
-        freq='4MS',
-        tz='America/New_York'
-    ).tz_convert('UTC').strftime('%Y%m%d%H').to_list()
-    st_list = dts[:-1]
-    ed_list = dts[1:]
+    for gg in gauge_forecast['SITENO'].to_list():
+        dts = pd.date_range(
+            start='1/1/2007',
+            end='01/01/2024',
+            freq='4MS',
+            tz='America/New_York'  # tz is not customized for each gauge
+        ).tz_convert('UTC').strftime('%Y%m%d%H').to_list()
 
-    lat_list = ['40.2', '40.3', '40.4', '40.5', '40.6']
-    lon_list = ['-76.8', '-76.7', '-76.6', '-76.5', '-76.4', '-76.3']
+        with open(f'./data/USGS_basin_geo/{gg}_basin_geo.geojson', 'r') as f:
+            watershed = json.load(f)
+        lat_list, lon_list = pp.get_bounding_grid(watershed)
+        # lat_list = ['40.2', '40.3', '40.4', '40.5', '40.6']
+        # lon_list = ['-76.8', '-76.7', '-76.6', '-76.5', '-76.4', '-76.3']
 
-    csv_files = [file for file in os.listdir('C:/Users/xpan88\Downloads') if file.endswith('.csv')]
-    saved_file = [(
-        i[i.find('_st') + 3: i.find('_ed')],
-        i[i.find('_ed') + 3: i.find('_clat')],
-        i[i.find('_clat') + 5: i.find('_clon')],
-        i[i.find('_clon') + 5: i.find('.csv')],
-    ) for i in csv_files]
+        working_dir = 'C:/Users/xpan88/Downloads'
 
-    initial = False
-    for st, ed in zip(st_list, ed_list):
-        for lat in lat_list:
-            for lon in lon_list:
-                if (st, ed, lat, lon) not in saved_file:
-                    # open webpage
-                    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
-                    head = 'https://sharaku.eorc.jaxa.jp/cgi-bin/trmm/GSMaP/tilemap/show_graph.cgi?flag=1&'
+        st_list = dts[:-1]
+        ed_list = dts[1:]
 
-                    url = f"{head}st={st}&ed={ed}&lat0={lat}&lon0={lon}&lang=en"
-                    driver.get(url)
-                    button = driver.find_element(By.ID, 'graph_dl')
-                    button.click()
+        csv_files = [file for file in os.listdir(working_dir) if file.endswith('.csv')]
+        saved_file = [(
+            i[i.find('_st') + 3: i.find('_ed')],
+            i[i.find('_ed') + 3: i.find('_clat')],
+            i[i.find('_clat') + 5: i.find('_clon')],
+            i[i.find('_clon') + 5: i.find('.csv')],
+        ) for i in csv_files]
 
-                    # open csv download window
-                    original_window = driver.current_window_handle
-                    assert len(driver.window_handles) > 1, "No new window opened"
-                    new_window = [window for window in driver.window_handles if window != original_window][0]
-                    driver.switch_to.window(new_window)
+        initial = False
+        for st, ed in zip(st_list, ed_list):
+            for lat in lat_list:
+                for lon in lon_list:
+                    if (st, ed, lat, lon) not in saved_file:
+                        # open webpage
+                        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+                        head = 'https://sharaku.eorc.jaxa.jp/cgi-bin/trmm/GSMaP/tilemap/show_graph.cgi?flag=1&'
 
-                    # input uid and psd
-                    new_url = driver.current_url
-                    update_new_url = new_url.split('//')[0] + f'//{uid}:{psd}@' + new_url.split('//')[1]
-                    driver.get(update_new_url)
+                        url = f"{head}st={st}&ed={ed}&lat0={lat}&lon0={lon}&lang=en"
+                        driver.get(url)
+                        button = driver.find_element(By.ID, 'graph_dl')
+                        button.click()
 
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
+                        # open csv download window
+                        original_window = driver.current_window_handle
+                        assert len(driver.window_handles) > 1, "No new window opened"
+                        new_window = [window for window in driver.window_handles if window != original_window][0]
+                        driver.switch_to.window(new_window)
 
-                    saved_file.append((st, ed, lat, lon))
-                    initial = True
+                        # input uid and psd
+                        new_url = driver.current_url
+                        update_new_url = new_url.split('//')[0] + f'//{uid}:{psd}@' + new_url.split('//')[1]
+                        driver.get(update_new_url)
+
+                        driver.close()
+                        driver.switch_to.window(driver.window_handles[0])
+
+                        saved_file.append((st, ed, lat, lon))
+                        initial = True
+                        break
+                if initial:
                     break
             if initial:
                 break
-        if initial:
-            break
-    if not initial:
-        raise EOFError('All files have been pulled.')
+        if not initial:
+            raise EOFError('All files have been pulled.')
 
-    first_run = True
-    for st, ed in zip(st_list, ed_list):
-        for lat in lat_list:
-            for lon in lon_list:
-                if (st, ed, lat, lon) not in saved_file:
-                    if first_run:
-                        first_run = False
-                        continue
-                    url = f"{head}st={st}&ed={ed}&lat0={lat}&lon0={lon}&lang=en"
-                    driver.get(url)
-                    button = driver.find_element(By.ID, 'graph_dl')
-                    button.click()
+        first_run = True
+        for st, ed in zip(st_list, ed_list):
+            for lat in lat_list:
+                for lon in lon_list:
+                    if (st, ed, lat, lon) not in saved_file:
+                        if first_run:
+                            first_run = False
+                            continue
+                        url = f"{head}st={st}&ed={ed}&lat0={lat}&lon0={lon}&lang=en"
+                        driver.get(url)
+                        button = driver.find_element(By.ID, 'graph_dl')
+                        button.click()
 
-                    driver.close()
-                    driver.switch_to.window(driver.window_handles[0])
+                        driver.close()
+                        driver.switch_to.window(driver.window_handles[0])
 
-    time.sleep(10)
-    driver.quit()
-    pass
+        time.sleep(10)
+        driver.quit()
 
 if analysis_name == 'organize_JAXA_data':
 
     import os
     import pandas as pd
 
-    working_dir = './data/JAXA_precipitation_data'
+    working_dir = './data/JAXA_precipitation_data/USGS_01573560'
 
     csv_files = [file for file in os.listdir(working_dir) if file.endswith('.csv')]
     saved_file = [(
@@ -339,5 +365,54 @@ if analysis_name == 'test_USGS_API':
 
     print('Finish!')
 
+
+if analysis_name == 'identify_flood_events':
+    import matplotlib.pyplot as plt
+    import os
+
+    gage = '01573560'
+    data_dir = './data/USGS_gage_iv_20y/01573560.csv'
+    flood_stage_dir = './data/USGS_gage_flood_stage/flood_stages.csv'
+    save_dir = './outputs/USGS_01573560/flooding_period'
+    os.makedirs(save_dir, exist_ok=True)
+    test_time = ('2021-01-13 11:00:00', '2024-01-01 00:00:00')
+
+    data = pp.import_data(data_dir, tz='America/Chicago')
+    data = data.resample('H', closed='right', label='right').mean()
+    data = data[(data.index >= test_time[0]) & (data.index <= test_time[1])]
+
+    flood_stage = pd.read_csv(flood_stage_dir, dtype={'site_no': 'str'})
+    flood_stage = flood_stage[flood_stage['site_no'] == gage]
+
+    # vis
+    data[f'{gage}_00065'].plot()
+    plt.axhline(y=flood_stage['action'].values[0], color='r', linestyle='--')
+    plt.savefig(f'{save_dir}/action_period.png')
+    plt.show()
+
+    # start and end time
+    data_action = data[data[f'{gage}_00065'] > flood_stage['action'].values[0]]
+    data_action = data_action.reset_index()
+    data_action['time_diff'] = data_action['index'].diff()
+    flood_starts = data_action.loc[
+        (data_action['time_diff'] != pd.Timedelta(hours=1)) | (data_action.index == data_action.index[0]), 'index'
+    ].reset_index()['index']
+    flood_ends = data_action.loc[
+        (data_action['time_diff'].shift(-1) != pd.Timedelta(hours=1)) | (data_action.index == data_action.index[-1]), 'index'
+    ].reset_index()['index']
+    flood_periods = pd.DataFrame({'start': flood_starts, 'end': flood_ends})
+
+    # peak time
+    peak_discharge, peak_time = [], []
+    for s, e in zip(flood_starts, flood_ends):
+        one_action = data_action[(data_action['index'] > s) & (data_action['index'] < e)]
+        max_dis = one_action[f'{gage}_00060'].max()
+        peak_discharge.append(max_dis)
+        peak_time.append(one_action[one_action[f'{gage}_00060'] == max_dis]['index'].iloc[0])
+    flood_periods['peak_dis'] = peak_discharge
+    flood_periods['peak_time'] = peak_time
+
+    flood_periods['data_avail'] = [True] * len(flood_periods)  # assume data is avail as default
+    flood_periods.to_csv(f'{save_dir}/action_period.csv', index=False)
 
 print()

@@ -266,12 +266,30 @@ def import_data_rc(dir, data_head_flag='INDEP	SHIFT	DEP	STOR', leap_from_flag=1)
         return None
 
     # read file
-    data = pd.read_csv(dir, skiprows=np.arange(head_flag + leap_from_flag), delimiter='	',
-                       names=['water_level', 'shift', 'discharge', 'asterisk'], index_col=None)
+    data = pd.read_csv(
+        dir, skiprows=np.arange(head_flag + leap_from_flag), delimiter='	',
+        names=['water_level', 'shift', 'discharge', 'asterisk'], index_col=None)
     data = data.drop(['asterisk', 'shift'], axis=1)
 
     return data.set_index('water_level')['discharge'].to_dict()
 
+
+def import_data_shift_rc_0157360(curve, shift, data_head_flag='# Gage height (ft)	Discharge (ft^3/s)'):
+    rc_file_name = f"./data/USGS_gage_01573560_shift_curves/01573560 shift {curve}_{shift}.txt"
+
+    head_flag = None
+    with open(rc_file_name, 'r') as file:
+        for num, line in enumerate(file, 1):
+            if line.startswith(data_head_flag):
+                head_flag = num
+    if head_flag is None:
+        return None
+
+    rc = pd.read_csv(
+        rc_file_name, skiprows=np.arange(head_flag), delimiter='	',
+        names=['gauge height', 'discharge'], index_col=None)
+
+    return rc
 
 def import_data_precipitation(dir, lat_list, lon_list, tz):
     csv_names = [file.split('.csv')[0] for file in os.listdir(dir) if file.endswith('.csv')]
@@ -758,3 +776,40 @@ def merge_field_modeled(data_field, data):
                                          data_field_modeled['discharge_field']).abs() /
                                         data_field_modeled['discharge_field']).fillna(0) * 100
     return data_field_modeled
+
+
+def list_depth(L):
+    if isinstance(L, list):
+        if not L:
+            return 1
+        return 1 + max(list_depth(item) for item in L)
+    else:
+        return 0
+
+def get_bounding_grid(watershed):
+    import math
+
+    watershed = watershed["features"][0]["geometry"]["coordinates"]
+    num_depth = list_depth(watershed)
+
+    for i in range(num_depth - 2):
+        watershed = watershed[0]
+
+    watershed_lat = [l[1] for l in watershed]
+    watershed_lon = [l[0] for l in watershed]
+    watershed_lat_min = min(watershed_lat)
+    watershed_lat_max = max(watershed_lat)
+    watershed_lon_min = min(watershed_lon)
+    watershed_lon_max = max(watershed_lon)
+    b_lat_min = math.floor(watershed_lat_min * 10) / 10.0
+    b_lat_max = math.floor(watershed_lat_max * 10) / 10.0
+    b_lon_min = math.floor(watershed_lon_min * 10) / 10.0
+    b_lon_max = math.floor(watershed_lon_max * 10) / 10.0
+
+    lat_list = list(np.arange(b_lat_min, b_lat_max + 0.1, 0.1))
+    lat_list = [str(round(num, 1)) for num in lat_list]
+    lon_list = list(np.arange(b_lon_min, b_lon_max + 0.1, 0.1))
+    lon_list = [str(round(num, 1)) for num in lon_list]
+
+    return lat_list, lon_list
+

@@ -6,43 +6,7 @@ from sklearn.preprocessing import PowerTransformer
 import utils.features as ft
 import utils.modeling as mo
 import utils.preprocess as pp
-
-
-def process_tune_data(
-        df_field, df_dis_normed,
-        sequences_w_index,
-        val_percent, test_percent,
-        forward,
-):
-    # index split
-    test_percent_updated, test_df_field, num_test_sequences = ft.update_test_percent(df_field, df_dis_normed,
-                                                                                     sequences_w_index, test_percent)
-    x = sequences_w_index[:, :, :-1][:, :-1, :]
-    dataset_index = ft.create_index_4_cv(x, False, None,
-                                         val_percent, test_percent_updated, None, None)  # codes for cv is not revised
-
-    # data for base model
-    x = sequences_w_index[:, :, :-1][:, :-len(forward), :]  # hard coded here
-    y = sequences_w_index[:, :, :-1][:, -len(forward):, :]  # hard coded here
-    y_index = sequences_w_index[:, :, [-1]][:, -len(forward):, :]  # hard coded here
-
-    test_x = x[dataset_index[0]['test_index'], :, :][:, :, 5:]  # hard coded here
-    test_y = y[dataset_index[0]['test_index'], :][:, :, :10]  # hard coded here
-    test_y_index = y_index[dataset_index[0]['test_index'], :, 0]
-
-    assert num_test_sequences == test_y.shape[0], 'Test sets inconsistency.'
-
-    train_df_field, val_df_field = ft.split_df_field(df_field, test_df_field, val_percent, test_percent_updated)
-    train_df_field, val_df_field = ft.filter_df_field(train_df_field, val_df_field,
-                                                      df_dis_normed, sequences_w_index[:, -1, -1])
-    train_index_seq_field, val_index_seq_field = ft.get_sequence_indices(train_df_field, val_df_field,
-                                                                         df_dis_normed, sequences_w_index[:, -1, -1])
-    train_df_field.insert(0, 'discharge_weights', train_df_field.pop('discharge_weights'))
-    val_df_field.insert(0, 'discharge_weights', val_df_field.pop('discharge_weights'))
-
-    train_x_raw = x[train_index_seq_field, :, :][:, :, 5:]  # hard coded here
-    val_x_raw = x[val_index_seq_field, :, :][:, :, 5:]  # hard coded here
-    return train_x_raw, val_x_raw, test_x, test_y_index, train_df_field, val_df_field, test_df_field
+from utils.features import process_tune_data
 
 
 def train_pred(
