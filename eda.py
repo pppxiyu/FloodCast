@@ -160,6 +160,7 @@ if analysis_name == 'pull_JAXA_data':
     uid = 'rainmap'
     psd = 'Niskur+1404'
 
+    working_dir = 'C:/Users/xpan88/Downloads'
     for gg in gauge_forecast['SITENO'].to_list():
         dts = pd.date_range(
             start='1/1/2007',
@@ -171,10 +172,6 @@ if analysis_name == 'pull_JAXA_data':
         with open(f'./data/USGS_basin_geo/{gg}_basin_geo.geojson', 'r') as f:
             watershed = json.load(f)
         lat_list, lon_list = pp.get_bounding_grid(watershed)
-        # lat_list = ['40.2', '40.3', '40.4', '40.5', '40.6']
-        # lon_list = ['-76.8', '-76.7', '-76.6', '-76.5', '-76.4', '-76.3']
-
-        working_dir = 'C:/Users/xpan88/Downloads'
 
         st_list = dts[:-1]
         ed_list = dts[1:]
@@ -223,7 +220,8 @@ if analysis_name == 'pull_JAXA_data':
             if initial:
                 break
         if not initial:
-            raise EOFError('All files have been pulled.')
+            # raise EOFError('All files have been pulled.')
+            continue
 
         first_run = True
         for st, ed in zip(st_list, ed_list):
