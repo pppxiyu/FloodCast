@@ -4,7 +4,7 @@ import os
 import utils.preprocess as pp
 
 
-analysis_name = 'organize_JAXA_data'
+analysis_name = 'pull_JAXA_data'
 dir_save_fig = './outputs/figs/'
 
 
@@ -139,109 +139,118 @@ if analysis_name == 'pull_JAXA_data':
     import time
     import json
     import math
-
     from ast import literal_eval
 
-    gauge_forecast = pd.read_csv(
-        "./outputs/USGS_gaga_filtering/gauge_forecast.csv",
-        dtype={"SITENO": str},
-    )
-    gauge_forecast['up_gage_names'] = gauge_forecast.apply(
-        lambda row: sorted(list(set(
-            literal_eval(row['active_up_gage_tri']) + literal_eval(row['active_up_gage_main']),
-            )), reverse=True), axis=1
-    )
-    # temporary selection
-    gauge_forecast = gauge_forecast[
-        (gauge_forecast['active_up_gage_num_main'] >= 3)
-        & (gauge_forecast['field_measure_count_action'] >= 10)
-        ]
+    def pull_jaxa():
+        gauge_forecast = pd.read_csv(
+            "./outputs/USGS_gaga_filtering/gauge_forecast.csv",
+            dtype={"SITENO": str},
+        )
+        gauge_forecast['up_gage_names'] = gauge_forecast.apply(
+            lambda row: sorted(list(set(
+                literal_eval(row['active_up_gage_tri']) + literal_eval(row['active_up_gage_main']),
+                )), reverse=True), axis=1
+        )
+        # temporary selection
+        gauge_forecast = gauge_forecast[
+            (gauge_forecast['active_up_gage_num_main'] >= 3)
+            & (gauge_forecast['field_measure_count_action'] >= 10)
+            ]
 
-    uid = 'rainmap'
-    psd = 'Niskur+1404'
+        uid = 'rainmap'
+        psd = 'Niskur+1404'
 
-    working_dir = 'C:/Users/xpan88/Downloads'
-    # for gg in gauge_forecast['SITENO'].to_list():
-    for gg in ['01573560']:
-        dts = pd.date_range(
-            start='1/1/2007',
-            end='01/01/2024',
-            freq='4MS',
-            tz='America/New_York'  # tz is not customized for each gauge
-        ).tz_convert('UTC').strftime('%Y%m%d%H').to_list()
+        working_dir = 'C:/Users/xpan88/Downloads'
+        for gg in gauge_forecast['SITENO'].to_list():
+            dts = pd.date_range(
+                start='1/1/2007',
+                end='01/01/2024',
+                freq='4MS',
+                tz='America/New_York'  # tz is not customized for each gauge
+            ).tz_convert('UTC').strftime('%Y%m%d%H').to_list()
 
-        with open(f'./data/USGS_basin_geo/{gg}_basin_geo.geojson', 'r') as f:
-            watershed = json.load(f)
-        lat_list, lon_list = pp.get_bounding_grid(watershed)
+            with open(f'./data/USGS_basin_geo/{gg}_basin_geo.geojson', 'r') as f:
+                watershed = json.load(f)
+            lat_list, lon_list = pp.get_bounding_grid(watershed)
 
-        st_list = dts[:-1]
-        ed_list = dts[1:]
+            st_list = dts[:-1]
+            ed_list = dts[1:]
 
-        csv_files = [file for file in os.listdir(working_dir) if file.endswith('.csv')]
-        saved_file = [(
-            i[i.find('_st') + 3: i.find('_ed')],
-            i[i.find('_ed') + 3: i.find('_clat')],
-            i[i.find('_clat') + 5: i.find('_clon')],
-            i[i.find('_clon') + 5: i.find('.csv')],
-        ) for i in csv_files]
+            csv_files = [file for file in os.listdir(working_dir) if file.endswith('.csv')]
+            saved_file = [(
+                i[i.find('_st') + 3: i.find('_ed')],
+                i[i.find('_ed') + 3: i.find('_clat')],
+                i[i.find('_clat') + 5: i.find('_clon')],
+                i[i.find('_clon') + 5: i.find('.csv')],
+            ) for i in csv_files]
 
-        initial = False
-        for st, ed in zip(st_list, ed_list):
-            for lat in lat_list:
-                for lon in lon_list:
-                    if (st, ed, lat, lon) not in saved_file:
-                        # open webpage
-                        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
-                        head = 'https://sharaku.eorc.jaxa.jp/cgi-bin/trmm/GSMaP/tilemap/show_graph.cgi?flag=1&'
+            initial = False
+            for st, ed in zip(st_list, ed_list):
+                for lat in lat_list:
+                    for lon in lon_list:
+                        if (st, ed, lat, lon) not in saved_file:
+                            # open webpage
+                            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
+                            head = 'https://sharaku.eorc.jaxa.jp/cgi-bin/trmm/GSMaP/tilemap/show_graph.cgi?flag=1&'
 
-                        url = f"{head}st={st}&ed={ed}&lat0={lat}&lon0={lon}&lang=en"
-                        driver.get(url)
-                        button = driver.find_element(By.ID, 'graph_dl')
-                        button.click()
+                            url = f"{head}st={st}&ed={ed}&lat0={lat}&lon0={lon}&lang=en"
+                            driver.get(url)
+                            button = driver.find_element(By.ID, 'graph_dl')
+                            button.click()
 
-                        # open csv download window
-                        original_window = driver.current_window_handle
-                        assert len(driver.window_handles) > 1, "No new window opened"
-                        new_window = [window for window in driver.window_handles if window != original_window][0]
-                        driver.switch_to.window(new_window)
+                            # open csv download window
+                            original_window = driver.current_window_handle
+                            assert len(driver.window_handles) > 1, "No new window opened"
+                            new_window = [window for window in driver.window_handles if window != original_window][0]
+                            driver.switch_to.window(new_window)
 
-                        # input uid and psd
-                        new_url = driver.current_url
-                        update_new_url = new_url.split('//')[0] + f'//{uid}:{psd}@' + new_url.split('//')[1]
-                        driver.get(update_new_url)
+                            # input uid and psd
+                            new_url = driver.current_url
+                            update_new_url = new_url.split('//')[0] + f'//{uid}:{psd}@' + new_url.split('//')[1]
+                            driver.get(update_new_url)
 
-                        driver.close()
-                        driver.switch_to.window(driver.window_handles[0])
+                            driver.close()
+                            driver.switch_to.window(driver.window_handles[0])
 
-                        saved_file.append((st, ed, lat, lon))
-                        initial = True
+                            saved_file.append((st, ed, lat, lon))
+                            initial = True
+                            break
+                    if initial:
                         break
                 if initial:
                     break
-            if initial:
-                break
-        if not initial:
-            # raise EOFError('All files have been pulled.')
-            continue
+            if not initial:
+                # raise EOFError('All files have been pulled.')
+                continue
 
-        first_run = True
-        for st, ed in zip(st_list, ed_list):
-            for lat in lat_list:
-                for lon in lon_list:
-                    if (st, ed, lat, lon) not in saved_file:
-                        if first_run:
-                            first_run = False
-                            continue
-                        url = f"{head}st={st}&ed={ed}&lat0={lat}&lon0={lon}&lang=en"
-                        driver.get(url)
-                        button = driver.find_element(By.ID, 'graph_dl')
-                        button.click()
+            first_run = True
+            for st, ed in zip(st_list, ed_list):
+                for lat in lat_list:
+                    for lon in lon_list:
+                        if (st, ed, lat, lon) not in saved_file:
+                            if first_run:
+                                first_run = False
+                                continue
+                            url = f"{head}st={st}&ed={ed}&lat0={lat}&lon0={lon}&lang=en"
+                            driver.get(url)
+                            button = driver.find_element(By.ID, 'graph_dl')
+                            button.click()
 
-                        driver.close()
-                        driver.switch_to.window(driver.window_handles[0])
+                            driver.close()
+                            driver.switch_to.window(driver.window_handles[0])
 
-        time.sleep(10)
-        driver.quit()
+            time.sleep(10)
+            driver.quit()
+        return
+
+    for attempt in range(100):
+        try:
+            pull_jaxa()
+        except Exception as e:
+            print(f"Attempt {attempt + 1} failed with error: {e}. Waiting {60} seconds before retrying...")
+            time.sleep(60)
+    raise Exception("All attempts failed")
+
 
 if analysis_name == 'organize_JAXA_data':
 
