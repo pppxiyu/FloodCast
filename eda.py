@@ -4,7 +4,7 @@ import os
 import utils.preprocess as pp
 
 
-analysis_name = 'pull_JAXA_data'
+analysis_name = 'organize_JAXA_data'
 dir_save_fig = './outputs/figs/'
 
 
@@ -161,7 +161,8 @@ if analysis_name == 'pull_JAXA_data':
     psd = 'Niskur+1404'
 
     working_dir = 'C:/Users/xpan88/Downloads'
-    for gg in gauge_forecast['SITENO'].to_list():
+    # for gg in gauge_forecast['SITENO'].to_list():
+    for gg in ['01573560']:
         dts = pd.date_range(
             start='1/1/2007',
             end='01/01/2024',
@@ -285,7 +286,7 @@ if analysis_name == 'organize_JAXA_data':
         loc_list = list(set([i[3:5] for i in saved_file]))
 
         # check if data of all needed locs were downloaded
-        if ~all(l in loc_list for l in needed_loc_list):
+        if not all(l in loc_list for l in needed_loc_list):
             print(f'Not all data for gauge {gg} is collected')
 
         concatenated_csv_files = [file for file in os.listdir(f'{working_dir}/USGS_{gg}') if file.endswith('.csv')]

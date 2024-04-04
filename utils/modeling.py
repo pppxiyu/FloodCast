@@ -16,6 +16,8 @@ import math
 
 from models.pi_hodcrnn import get_rc_shifts
 
+from sklearn.metrics import mean_absolute_percentage_error
+
 
 class RiverDataset(Dataset):
     def __init__(self, x, y):
@@ -782,3 +784,33 @@ def apply_rc_shifts(df, convert_from='pred_water_level', filter=None):
 
         df.loc[(df.index >= start_t) & (df.index < end_t), ['pred']] = df_cut['discharge'].to_list()
     return df
+
+
+def calculate_base_error_ratio(train_df_field, val_df_field, threshold=0):
+
+    train_df_field = train_df_field[train_df_field['water_level'] >= threshold]
+    val_df_field = val_df_field[val_df_field['water_level'] >= threshold]
+    assert (len(train_df_field) + len(val_df_field)) > 0, 'No data point for 1st order tuning.'
+
+    train_per = len(train_df_field) / (len(train_df_field) + len(val_df_field))
+    assert 0 <= train_per <= 1, 'Abnormal percentage.'
+
+    mape_rc_train = mean_absolute_percentage_error(
+        train_df_field['discharge'], train_df_field['discharge_modeled']
+    ) if len(train_df_field) > 0 else 0
+    mape_rc_val = mean_absolute_percentage_error(
+        val_df_field['discharge'], val_df_field['discharge_modeled']
+    ) if len(val_df_field) > 0 else 0
+    mape_rc = mape_rc_train * train_per + mape_rc_val * (1 - train_per)
+
+    mape_base_train = mean_absolute_percentage_error(
+        train_df_field['discharge_modeled'], train_df_field['pred_discharge']
+    ) if len(train_df_field) > 0 else 0
+    mape_base_val = mean_absolute_percentage_error(
+        val_df_field['discharge_modeled'], val_df_field['pred_discharge']
+    ) if len(val_df_field) > 0 else 0
+    mape_base = mape_base_train * train_per + mape_base_val * (1 - train_per)
+
+    base_ratio = mape_base / (mape_base + mape_rc)
+
+    return base_ratio

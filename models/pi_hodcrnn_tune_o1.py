@@ -15,8 +15,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import PowerTransformer
 
-from sklearn.metrics import mean_absolute_percentage_error
-
 import warnings
 
 
@@ -31,8 +29,8 @@ def train_pred(
     # reload model
     saved_model = torch.load(
         # './outputs/experiments/ARCHIVE_pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
-        './outputs/experiments/ARCHIVE_pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth'
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth',
+        # './outputs/experiments/ARCHIVE_pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth'
+        './outputs/experiments/ARCHIVE_pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth',
         # './outputs/experiments/ARCHIVE_pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
         # './outputs/experiments/ARCHIVE_pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
         # './outputs/experiments/ARCHIVE_pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
@@ -280,23 +278,16 @@ def train_pred(
     train_val_df_field = pd.concat([train_df_field, val_df_field]).sort_index()
     train_val_df_field.to_csv(f'{expr_dir}/train_val_df.csv')
 
-    # # calculate base error ratio
-    # train_df_field = train_df_field.merge(df[[target_gage + '_00060']], how='left', left_index=True, right_index=True)
-    # train_df_field = train_df_field.rename(columns={target_gage + '_00060': 'discharge_modeled'})
-    # val_df_field = val_df_field.merge(df[[target_gage + '_00060']], how='left', left_index=True, right_index=True)
-    # val_df_field = val_df_field.rename(columns={target_gage + '_00060': 'discharge_modeled'})
-    #
-    # mape_rc_train = mean_absolute_percentage_error(train_df_field['discharge'], train_df_field['discharge_modeled'])
-    # mape_rc_val = mean_absolute_percentage_error(val_df_field['discharge'], val_df_field['discharge_modeled'])
-    # train_per = len(train_df_field) / ( len(train_df_field) + len(val_df_field) )
-    # mape_rc = mape_rc_train * train_per + mape_rc_val * (1 - train_per)
-    #
-    # mape_base_train = mean_absolute_percentage_error(train_df_field['discharge_modeled'], train_df_field['pred_discharge'])
-    # mape_base_val = mean_absolute_percentage_error(val_df_field['discharge_modeled'], val_df_field['pred_discharge'])
-    # mape_base = mape_base_train * train_per + mape_base_val * (1 - train_per)
-    #
-    # base_ratio = mape_base / (mape_base + mape_rc)
-    # print(base_ratio)
+    # calculate base error ratio
+    train_df_field = train_df_field.merge(df[[target_gage + '_00060']], how='left', left_index=True, right_index=True)
+    train_df_field = train_df_field.rename(columns={target_gage + '_00060': 'discharge_modeled'})
+    val_df_field = val_df_field.merge(df[[target_gage + '_00060']], how='left', left_index=True, right_index=True)
+    val_df_field = val_df_field.rename(columns={target_gage + '_00060': 'discharge_modeled'})
+    train_df_field = train_df_field.merge(df[[target_gage + '_00065']], how='left', left_index=True, right_index=True)
+    train_df_field = train_df_field.rename(columns={target_gage + '_00065': 'water_level'})
+    val_df_field = val_df_field.merge(df[[target_gage + '_00065']], how='left', left_index=True, right_index=True)
+    val_df_field = val_df_field.rename(columns={target_gage + '_00065': 'water_level'})
+    base_ratio = mo.calculate_base_error_ratio(train_df_field, val_df_field, data_flood_stage['action'].iloc[0])
 
     # residual error learning
     from sklearn.linear_model import LinearRegression
@@ -345,7 +336,7 @@ def train_pred(
     plt.show()
 
     pred_y_tune = test_x_pred_o_rc.copy()
-    pred_y_tune[test_filter] = pred_y_tune[test_filter] - residual_pred
+    pred_y_tune[test_filter] = pred_y_tune[test_filter] - residual_pred * (1 - base_ratio)
 
     # recording
     test_df_full.loc[:, 'pred'] = np.nan
