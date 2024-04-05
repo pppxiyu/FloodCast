@@ -162,6 +162,8 @@ if analysis_name == 'pull_JAXA_data':
 
         working_dir = 'C:/Users/xpan88/Downloads'
         for gg in gauge_forecast['SITENO'].to_list():
+            print(f'Downloading for {gg}.')
+            download_flag = False
             dts = pd.date_range(
                 start='1/1/2007',
                 end='01/01/2024',
@@ -214,6 +216,7 @@ if analysis_name == 'pull_JAXA_data':
 
                             saved_file.append((st, ed, lat, lon))
                             initial = True
+                            download_flag = True
                             break
                     if initial:
                         break
@@ -239,6 +242,9 @@ if analysis_name == 'pull_JAXA_data':
                             driver.close()
                             driver.switch_to.window(driver.window_handles[0])
 
+            if download_flag is not True:
+                print(f'Downloading for {gg} is done.')
+
             time.sleep(10)
             driver.quit()
         return
@@ -250,7 +256,7 @@ if analysis_name == 'pull_JAXA_data':
             print(f"Attempt {attempt + 1} failed with error: {e}. Waiting {60} seconds before retrying...")
             time.sleep(60)
     raise Exception("All attempts failed")
-
+    # pull_jaxa()
 
 if analysis_name == 'organize_JAXA_data':
 
