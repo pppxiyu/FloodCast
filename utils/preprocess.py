@@ -813,3 +813,26 @@ def get_bounding_grid(watershed):
 
     return lat_list, lon_list
 
+
+def get_bounds(watershed):
+    import math
+
+    watershed = watershed["features"][0]["geometry"]["coordinates"]
+    num_depth = list_depth(watershed)
+
+    for i in range(num_depth - 2):
+        watershed = watershed[0]
+
+    watershed_lat = [l[1] for l in watershed]
+    watershed_lon = [l[0] for l in watershed]
+    watershed_lat_min = min(watershed_lat)
+    watershed_lat_max = max(watershed_lat)
+    watershed_lon_min = min(watershed_lon)
+    watershed_lon_max = max(watershed_lon)
+    b_lat_min = math.floor(watershed_lat_min * 10) / 10.0
+    b_lat_max = math.ceil(watershed_lat_max * 10) / 10.0
+    b_lon_min = math.floor(watershed_lon_min * 10) / 10.0
+    b_lon_max = math.ceil(watershed_lon_max * 10) / 10.0
+
+    return b_lat_min, b_lat_max, b_lon_min, b_lon_max
+
