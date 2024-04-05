@@ -27,6 +27,7 @@ def apply_o1_tuner(
         tuner_o1,
         x_pred_o_rc,
         df_field_filter_index=None,
+        base_ratio=0,
 ):
     if df_field_filter_index is not None:
         x_past = x_raw[:, :, 0][df_field_filter_index]
@@ -48,7 +49,7 @@ def apply_o1_tuner(
         residual_pred = residual_pred * x_pred_o_rc[tuner_o1_index]
 
         x_pred_o_rc_o1 = x_pred_o_rc.copy()
-        x_pred_o_rc_o1[tuner_o1_index] = x_pred_o_rc[tuner_o1_index] - residual_pred
+        x_pred_o_rc_o1[tuner_o1_index] = x_pred_o_rc[tuner_o1_index] - residual_pred * (1 - base_ratio)
 
     return x_pred_o_rc_o1, x_series, x_series_diff
 
@@ -93,26 +94,37 @@ def check_bias_trend(train_df_field, val_df_field, train_x_pred_o_rc, val_x_pred
 def train_pred(
         df, df_precip, df_field, dict_rc, adj_matrix_dir,
         lags, forward, target_gage,
-        val_percent, test_percent, expr_dir, if_tune
+        val_percent, test_percent, expr_dir, data_flood_stage, if_tune
 ):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # reload model
     saved_model = torch.load(
-        './outputs/experiments/ARCHIVE_pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth'
+        # './outputs/experiments/ARCHIVE_pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
+        # './outputs/experiments/ARCHIVE_pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth'
+        './outputs/experiments/ARCHIVE_pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth',
+        # './outputs/experiments/ARCHIVE_pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
+        # './outputs/experiments/ARCHIVE_pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
+        # './outputs/experiments/ARCHIVE_pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
     )
     model = saved_model['model']
     model.eval()
     model.to(device)
     model.name = 'LevelPredHomoDCRNN_tune'
 
-    with open('./outputs/experiments/pi_hodcrnn_tune_o1_4__2024-03-18-23-52-25/tuner_o1_1degree_poly.pkl', 'rb') as file:
+    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_1__2024-04-04-13-15-56'
+    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_2__2024-04-04-13-26-18'
+    dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_3__2024-04-04-13-27-54'
+    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_4__2024-04-04-13-29-34'
+    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_5__2024-04-04-13-30-53'
+    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_6__2024-04-04-13-32-38'
+    with open(f'{dir_o1}/tuner_o1_1degree_poly.pkl', 'rb') as file:
         tuner_o1 = pickle.load(file)
-    with open('./outputs/experiments/pi_hodcrnn_tune_o1_4__2024-03-18-23-52-25/tuner_o1_apply_index_train.pkl', 'rb') as file:
+    with open(f'{dir_o1}/tuner_o1_apply_index_train.pkl', 'rb') as file:
         tuner_o1_train_index = pickle.load(file)
-    with open('./outputs/experiments/pi_hodcrnn_tune_o1_4__2024-03-18-23-52-25/tuner_o1_apply_index_val.pkl', 'rb') as file:
+    with open(f'{dir_o1}/tuner_o1_apply_index_val.pkl', 'rb') as file:
         tuner_o1_val_index = pickle.load(file)
-    with open('./outputs/experiments/pi_hodcrnn_tune_o1_4__2024-03-18-23-52-25/tuner_o1_apply_index_test.pkl', 'rb') as file:
+    with open(f'{dir_o1}/tuner_o1_apply_index_test.pkl', 'rb') as file:
         tuner_o1_test_index = pickle.load(file)
 
     # tuner params
@@ -131,23 +143,7 @@ def train_pred(
             df_wl_normed = pp.sample_weights(df_wl_normed, col, if_log=True)
 
     # precip
-    area_ratio_precip = pd.read_csv(f'{adj_matrix_dir}/area_in_boundary_ratio.csv')
-    area_ratio_precip['lat'] = area_ratio_precip['identifier'].str.split('_').str.get(0)
-    area_ratio_precip['lat'] = area_ratio_precip['lat'].astype(float)
-    area_ratio_precip['lat'] = area_ratio_precip['lat'] - 0.05
-    area_ratio_precip['lon'] = area_ratio_precip['identifier'].str.split('_').str.get(1)
-    area_ratio_precip['lon'] = area_ratio_precip['lon'].astype(float)
-    area_ratio_precip['lon'] = area_ratio_precip['lon'] - 0.05
-    area_ratio_precip['label'] = area_ratio_precip.apply(
-        lambda x: f"clat{round(x['lat'], 1)}_clon{round(x['lon'], 1)}",
-        axis=1,
-    )
-    df_precip_scaled = df_precip[area_ratio_precip['label'].to_list()]
-    for col in df_precip_scaled.columns:
-        df_precip_scaled.loc[:, col] = df_precip_scaled[col] * area_ratio_precip[
-            area_ratio_precip['label'] == col
-            ]['updated_area_ratio'].iloc[0]
-    df_precip_scaled = df_precip_scaled.sum(axis=1).to_frame()
+    df_precip_scaled = ft.scale_precip_data(adj_matrix_dir, df_precip)
     scaler_precip = scaler()
     df_precip_normed = pd.DataFrame(
         scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index
@@ -174,8 +170,8 @@ def train_pred(
     rows_with_nan = np.any(np.isnan(sequences_w_index), axis=(1, 2))
     sequences_w_index = sequences_w_index[~rows_with_nan]
 
-    # keep usable field measurements (new)
-    start_time = df_normed[df_normed['index'] == sequences_w_index[0,0,-1]].index
+    # keep usable field measurements
+    start_time = df_normed[df_normed['index'] == sequences_w_index[0, 0, -1]].index
     df_field = df_field[df_field.index >= start_time.strftime('%Y-%m-%d %H:%M:%S')[0]]
     if len(df_field) < 50:
         warnings.warn(f'Field measurement count is low. {len(df_field)} usable field visits.')
@@ -187,28 +183,37 @@ def train_pred(
         val_percent, test_percent,
         forward,
     )
+    x, y, train_index_field, val_index_field = ft.process_tune_data_2(
+        df_field, df_normed,
+        sequences_w_index,
+        val_percent, test_percent,
+        forward,
+    )
 
-    # data for tuning: use model out as x
-    train_x_pred_o = model(
-        torch.tensor(train_x_raw).to(device, dtype=torch.float)
-    ).detach().cpu().numpy()[:, 0:1, 0].astype('float64')
-    val_x_pred_o = model(
-        torch.tensor(val_x_raw).to(device, dtype=torch.float)
-    ).detach().cpu().numpy()[:, 0:1, 0].astype('float64')
-
+    # pred
+    x_pred_o = mo.pred_4_test_hodcrnn(model, x, target_in_forward, device)[:, 0:1, 0].astype('float64')
     scaler_pred = scaler()
     scaler_pred.fit(df[[f"{target_gage}_00065"]])
-    train_x_pred_o = scaler_pred.inverse_transform(pd.DataFrame(train_x_pred_o))
-    val_x_pred_o = scaler_pred.inverse_transform(pd.DataFrame(val_x_pred_o))
+    x_pred_o = scaler_pred.inverse_transform(pd.DataFrame(x_pred_o))
 
-    # train_x_pred_o = np.round(train_x_pred_o, 2)
-    # val_x_pred_o = np.round(val_x_pred_o, 2)
+    train_x_pred_o = x_pred_o[train_index_field, :]
+    val_x_pred_o = x_pred_o[val_index_field, :]
 
-    # data for tuning: time serie (past values + predicted value) as x / take off data point long time ago
-    train_x_pred_o, train_df_field, train_df_field_index = ft.filter_time_df_field(train_df_field, train_x_pred_o)
-    val_x_pred_o, val_df_field, val_df_field_index = ft.filter_time_df_field(val_df_field, val_x_pred_o)
+    y_denormed = scaler_pred.inverse_transform(pd.DataFrame(y))
 
-    # data for tuning: residual error rate as y / predicted discharge
+    # base tune
+    train_x_pred_o = train_x_pred_o - np.array(
+        ft.remove_base_error(train_index_field, forward, x_pred_o, y_denormed)
+    )[:, np.newaxis]
+    val_x_pred_o = val_x_pred_o - np.array(
+        ft.remove_base_error(val_index_field, forward, x_pred_o, y_denormed)
+    )[:, np.newaxis]
+
+    # # data for tuning: time serie (past values + predicted value) as x / take off data point long time ago
+    # train_x_pred_o, train_df_field, train_df_field_index = ft.filter_time_df_field(train_df_field, train_x_pred_o)
+    # val_x_pred_o, val_df_field, val_df_field_index = ft.filter_time_df_field(val_df_field, val_x_pred_o)
+
+    # convert to dis
     train_x_pred_o_rc = mo.convert_array_w_rc(
         np.round(train_x_pred_o, 2),
         train_df_field.copy(), df_raw
@@ -218,14 +223,23 @@ def train_pred(
         val_df_field.copy(), df_raw
     )[:, np.newaxis]
 
-    # data for tuning: residual error rate as y / apply tuner o1
+    # calculate base error ratio
+    train_df_field['pred_discharge'] = train_x_pred_o_rc
+    val_df_field['pred_discharge'] = val_x_pred_o_rc
+    train_df_field, val_df_field = ft.merge_true_wl_dis(train_df_field, val_df_field, df, target_gage)
+    base_ratio_o1 = mo.calculate_base_error_ratio(
+        train_df_field, val_df_field, data_flood_stage['action'].iloc[0]
+    )
+
+    # apply o1
     train_x_pred_o_rc, _, _ = apply_o1_tuner(
         train_x_raw,
         df, target_gage,
         train_x_pred_o, tuner_o1_train_index,
         tuner_o1,
         train_x_pred_o_rc,
-        train_df_field_index,
+        # train_df_field_index,
+        base_ratio=base_ratio_o1,
     )
     val_x_pred_o_rc, _, _ = apply_o1_tuner(
         val_x_raw,
@@ -233,7 +247,8 @@ def train_pred(
         val_x_pred_o, tuner_o1_val_index,
         tuner_o1,
         val_x_pred_o_rc,
-        val_df_field_index,
+        # val_df_field_index,
+        base_ratio=base_ratio_o1,
     )
 
     # record data
@@ -242,7 +257,10 @@ def train_pred(
     train_val_df_field = pd.concat([train_df_field, val_df_field]).sort_index()
     train_val_df_field.to_csv(f'{expr_dir}/train_val_df.csv')
 
-    # data for tuning: residual error rate as y / error rate
+    # calculate base error ratio
+    base_ratio_o2 = mo.calculate_base_error_ratio(train_df_field, val_df_field, 0)
+
+    # residual error
     train_y_field = train_df_field['discharge'].values[:, np.newaxis].astype(np.float64)
     val_y_field = val_df_field['discharge'].values[:, np.newaxis].astype(np.float64)
 
@@ -281,6 +299,15 @@ def train_pred(
     test_df = test_df.drop('index', axis=1)
     test_df_full = test_df_full.drop('index', axis=1)
 
+    # base tune for test set
+    test_df = test_df.reset_index()
+    pred_error_list = ft.remove_test_base_error(test_df, test_df_full, forward)
+    test_df = test_df.set_index('index')
+    test_df['pred_water_level_error'] = pred_error_list
+    test_df['pred_water_level_u_tuned'] = test_df['pred_water_level']
+    test_df['pred_water_level'] = test_df['pred_water_level'] - test_df['pred_water_level_error']
+
+    # convert for test set
     test_x_pred_o = test_df['pred_water_level'].values[:, np.newaxis]
     test_x_pred_o_rc = mo.convert_array_w_rc(
         np.round(test_x_pred_o, 2),
@@ -288,6 +315,7 @@ def train_pred(
         df_raw
     )[:, np.newaxis]
 
+    # apply o1 for test set
     residual_pred_o1, _, _ = apply_o1_tune_4_test(
         test_df, test_x_raw,
         df, target_gage,
@@ -295,8 +323,12 @@ def train_pred(
         test_x_pred_o_rc,
         test_df_index,
     )
-    test_x_pred_o_rc[tuner_o1_test_index] = test_x_pred_o_rc[tuner_o1_test_index] - residual_pred_o1
+    test_x_pred_o_rc[tuner_o1_test_index] = (
+            test_x_pred_o_rc[tuner_o1_test_index]
+            - residual_pred_o1 * (1 - base_ratio_o1)
+    )
 
+    # residual error for test set
     test_y_field = test_df_field['discharge'].values[:, np.newaxis].astype(np.float64)
     test_y_res = test_x_pred_o_rc - test_y_field
     test_y_res = test_y_res / test_x_pred_o_rc
@@ -737,7 +769,7 @@ def train_pred(
             plt.plot(x_plot_select, y_plot, color='blue')
         plt.show()
 
-    pred_y_tune = test_x_pred_o_rc - residual_pred
+    pred_y_tune = test_x_pred_o_rc - residual_pred * (1 - base_ratio_o2)
 
     # recording
     test_df_full.loc[:, 'pred'] = np.nan

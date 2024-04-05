@@ -52,23 +52,7 @@ def train_pred(
             df_wl_normed = pp.sample_weights(df_wl_normed, col, if_log=True)
 
     # precip
-    area_ratio_precip = pd.read_csv(f'{adj_matrix_dir}/area_in_boundary_ratio.csv')
-    area_ratio_precip['lat'] = area_ratio_precip['identifier'].str.split('_').str.get(0)
-    area_ratio_precip['lat'] = area_ratio_precip['lat'].astype(float)
-    area_ratio_precip['lat'] = area_ratio_precip['lat'] - 0.05
-    area_ratio_precip['lon'] = area_ratio_precip['identifier'].str.split('_').str.get(1)
-    area_ratio_precip['lon'] = area_ratio_precip['lon'].astype(float)
-    area_ratio_precip['lon'] = area_ratio_precip['lon'] - 0.05
-    area_ratio_precip['label'] = area_ratio_precip.apply(
-        lambda x: f"clat{round(x['lat'], 1)}_clon{round(x['lon'], 1)}",
-        axis=1,
-    )
-    df_precip_scaled = df_precip[area_ratio_precip['label'].to_list()]
-    for col in df_precip_scaled.columns:
-        df_precip_scaled.loc[:, col] = df_precip_scaled[col] * area_ratio_precip[
-            area_ratio_precip['label'] == col
-            ]['updated_area_ratio'].iloc[0]
-    df_precip_scaled = df_precip_scaled.sum(axis=1).to_frame()
+    df_precip_scaled = ft.scale_precip_data(adj_matrix_dir, df_precip)
     scaler_precip = scaler()
     df_precip_normed = pd.DataFrame(
         scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index
@@ -95,8 +79,8 @@ def train_pred(
     rows_with_nan = np.any(np.isnan(sequences_w_index), axis=(1, 2))
     sequences_w_index = sequences_w_index[~rows_with_nan]
 
-    # keep usable field measurements (new)
-    start_time = df_normed[df_normed['index'] == sequences_w_index[0,0,-1]].index
+    # keep usable field measurements
+    start_time = df_normed[df_normed['index'] == sequences_w_index[0, 0, -1]].index
     df_field = df_field[df_field.index >= start_time.strftime('%Y-%m-%d %H:%M:%S')[0]]
     if len(df_field) < 50:
         warnings.warn(f'Field measurement count is low. {len(df_field)} usable field visits.')
@@ -115,7 +99,7 @@ def train_pred(
         forward,
     )
 
-    # data for tuning: time serie (past values + predicted value) as x
+    # pred
     x_pred_o = mo.pred_4_test_hodcrnn(model, x, target_in_forward, device)[:, 0:1, 0].astype('float64')
     scaler_pred = scaler()
     scaler_pred.fit(df[[f"{target_gage}_00065"]])
@@ -140,19 +124,18 @@ def train_pred(
     # train_x_past = train_x_raw[:, :, 0][train_df_field_index]
     # val_x_past = val_x_raw[:, :, 0][val_df_field_index]
 
-    # data for tuning: time serie (past values + predicted value) as x / shortened model input
+    # format
     train_x_past = train_x_raw[:, :, 0]
     val_x_past = val_x_raw[:, :, 0]
     train_x_past = scaler_pred.inverse_transform(pd.DataFrame(train_x_past))
     val_x_past = scaler_pred.inverse_transform(pd.DataFrame(val_x_past))
 
-    # data for tuning: time serie (past values + predicted value) as x / concat
     train_x_series = np.concatenate((train_x_past, train_x_pred_o), axis=1)
     val_x_series = np.concatenate((val_x_past, val_x_pred_o), axis=1)
     train_x_series_diff = np.diff(train_x_series, axis=1)
     val_x_series_diff = np.diff(val_x_series, axis=1)
 
-    # data for tuning: use residual error as y
+    # convert to dis
     train_x_pred_o = np.round(train_x_pred_o, 2)
     val_x_pred_o = np.round(val_x_pred_o, 2)
 
@@ -162,13 +145,14 @@ def train_pred(
     train_y_field = train_df_field['discharge'].values[:, np.newaxis].astype(np.float64)
     val_y_field = val_df_field['discharge'].values[:, np.newaxis].astype(np.float64)
 
+    # residual error
     train_y_res = train_x_pred_o_rc - train_y_field
     val_y_res = val_x_pred_o_rc - val_y_field
 
     train_y_res_per = train_y_res / train_x_pred_o_rc
     val_y_res_per = val_y_res / val_x_pred_o_rc
 
-    # test x
+    # test set
     test_x_pred_o = mo.pred_4_test_hodcrnn(model, test_x_raw, target_in_forward, device)
     test_x_pred_o = test_x_pred_o[:, 0, :].astype(np.float64)
     test_x_pred_o = scaler_pred.inverse_transform(pd.DataFrame(test_x_pred_o))
@@ -190,6 +174,7 @@ def train_pred(
     test_df = test_df.drop('index', axis=1)
     test_df_full = test_df_full.drop('index', axis=1)
 
+    # base tune for test set
     test_df = test_df.reset_index()
     pred_error_list = ft.remove_test_base_error(test_df, test_df_full, forward)
     test_df = test_df.set_index('index')
@@ -197,6 +182,7 @@ def train_pred(
     test_df['pred_water_level_u_tuned'] = test_df['pred_water_level']
     test_df['pred_water_level'] = test_df['pred_water_level'] - test_df['pred_water_level_error']
 
+    # convert
     test_x_pred_o = test_df['pred_water_level'].values[:, np.newaxis]
     test_x_past = test_x_raw[test_df_index.values][:, :, 0]
     test_x_past = (test_x_past * (df[f"{target_gage}_00065"].max() - df[f"{target_gage}_00065"].min())
@@ -204,13 +190,13 @@ def train_pred(
     test_x_series = np.concatenate((test_x_past, test_x_pred_o), axis=1)
     test_x_series_diff = np.diff(test_x_series, axis=1)
 
-    # test y
     test_x_pred_o_rc = mo.convert_array_w_rc(
         np.round(test_x_pred_o[:, 0], 2),
         test_df.copy(),
         df_raw
     )[:, np.newaxis]
 
+    # residual error
     test_y_field = test_df_field['discharge'].values[:, np.newaxis].astype(np.float64)
     test_y_res = test_x_pred_o_rc - test_y_field
     test_y_res_per = test_y_res / test_x_pred_o_rc
@@ -238,12 +224,11 @@ def train_pred(
     val_high_change_index = np.abs(val_x_series_diff[:, -1] / val_x_series[:, -2]) >= high_change
     test_high_change_index = np.abs(test_x_series_diff[:, -1] / test_x_series[:, -2]) >= high_change
 
-    # filter - all
+    # filter
     train_filter = train_high_flow_index & train_high_change_index
     val_filter = val_high_flow_index & val_high_change_index
     test_filter = test_high_flow_index & test_high_change_index
 
-    # filtering
     train_x_series_diff_tune = train_x_series_diff[:, -1][train_filter]
     train_x_series_tune = train_x_series[:, -2][train_filter]
     val_x_series_diff_tune = val_x_series_diff[:, -1][val_filter]
@@ -279,14 +264,7 @@ def train_pred(
     train_val_df_field.to_csv(f'{expr_dir}/train_val_df.csv')
 
     # calculate base error ratio
-    train_df_field = train_df_field.merge(df[[target_gage + '_00060']], how='left', left_index=True, right_index=True)
-    train_df_field = train_df_field.rename(columns={target_gage + '_00060': 'discharge_modeled'})
-    val_df_field = val_df_field.merge(df[[target_gage + '_00060']], how='left', left_index=True, right_index=True)
-    val_df_field = val_df_field.rename(columns={target_gage + '_00060': 'discharge_modeled'})
-    train_df_field = train_df_field.merge(df[[target_gage + '_00065']], how='left', left_index=True, right_index=True)
-    train_df_field = train_df_field.rename(columns={target_gage + '_00065': 'water_level'})
-    val_df_field = val_df_field.merge(df[[target_gage + '_00065']], how='left', left_index=True, right_index=True)
-    val_df_field = val_df_field.rename(columns={target_gage + '_00065': 'water_level'})
+    train_df_field, val_df_field = ft.merge_true_wl_dis(train_df_field, val_df_field, df, target_gage)
     base_ratio = mo.calculate_base_error_ratio(train_df_field, val_df_field, data_flood_stage['action'].iloc[0])
 
     # residual error learning

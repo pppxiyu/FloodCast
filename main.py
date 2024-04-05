@@ -22,7 +22,7 @@ import models.pi_hodcrnn_tune_base as pi_hodcrnn_tune_base
 import models.pi_hodcrnn_tune_o1 as pi_hodcrnn_tune_o1
 import models.pi_hodcrnn_tune_o2 as pi_hodcrnn_tune_o2
 import models.pi_hodcrnn_tune_o3 as pi_hodcrnn_tune_o3
-import models.pi_hodcrnn_tune_lump as pi_hodcrnn_tune_l
+import models.pending.pi_hodcrnn_tune_lump as pi_hodcrnn_tune_l
 
 import pandas as pd
 
@@ -200,7 +200,7 @@ for target_gage, upstream_gages, lags, forward, model_name, extra_label, if_tune
             test_df, test_df_full = pi_hodcrnn_tune_o2.train_pred(
                 data, data_precip, data_field, data_rc,
                 adj_matrix_dir, lags, forward, target_gage, val_percent, test_percent,
-                expr_dir,
+                expr_dir, data_flood_stage,
                 if_tune=if_tune,
             )
 
@@ -208,7 +208,7 @@ for target_gage, upstream_gages, lags, forward, model_name, extra_label, if_tune
             test_df, test_df_full = pi_hodcrnn_tune_o3.train_pred(
                 data, data_precip, data_field, data_rc,
                 adj_matrix_dir, lags, forward, target_gage, val_percent, test_percent,
-                expr_dir,
+                expr_dir, data_flood_stage,
                 if_tune=if_tune,
             )
 

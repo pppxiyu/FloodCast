@@ -465,3 +465,35 @@ def remove_test_base_error(test_df, test_df_full, forward):
 
     return pred_error_list
 
+def scale_precip_data(adj_matrix_dir, df_precip):
+    area_ratio_precip = pd.read_csv(f'{adj_matrix_dir}/area_in_boundary_ratio.csv')
+    area_ratio_precip['lat'] = area_ratio_precip['identifier'].str.split('_').str.get(0)
+    area_ratio_precip['lat'] = area_ratio_precip['lat'].astype(float)
+    area_ratio_precip['lat'] = area_ratio_precip['lat'] - 0.05
+    area_ratio_precip['lon'] = area_ratio_precip['identifier'].str.split('_').str.get(1)
+    area_ratio_precip['lon'] = area_ratio_precip['lon'].astype(float)
+    area_ratio_precip['lon'] = area_ratio_precip['lon'] - 0.05
+    area_ratio_precip['label'] = area_ratio_precip.apply(
+        lambda x: f"clat{round(x['lat'], 1)}_clon{round(x['lon'], 1)}",
+        axis=1,
+    )
+    df_precip_scaled = df_precip[area_ratio_precip['label'].to_list()]
+    for col in df_precip_scaled.columns:
+        df_precip_scaled.loc[:, col] = df_precip_scaled[col] * area_ratio_precip[
+            area_ratio_precip['label'] == col
+            ]['updated_area_ratio'].iloc[0]
+    df_precip_scaled = df_precip_scaled.sum(axis=1).to_frame()
+    return df_precip_scaled
+
+
+def merge_true_wl_dis(train_df_field, val_df_field, df, target_gage):
+    train_df_field = train_df_field.merge(df[[target_gage + '_00060']], how='left', left_index=True, right_index=True)
+    train_df_field = train_df_field.rename(columns={target_gage + '_00060': 'discharge_modeled'})
+    val_df_field = val_df_field.merge(df[[target_gage + '_00060']], how='left', left_index=True, right_index=True)
+    val_df_field = val_df_field.rename(columns={target_gage + '_00060': 'discharge_modeled'})
+    train_df_field = train_df_field.merge(df[[target_gage + '_00065']], how='left', left_index=True, right_index=True)
+    train_df_field = train_df_field.rename(columns={target_gage + '_00065': 'water_level'})
+    val_df_field = val_df_field.merge(df[[target_gage + '_00065']], how='left', left_index=True, right_index=True)
+    val_df_field = val_df_field.rename(columns={target_gage + '_00065': 'water_level'})
+    return train_df_field, val_df_field
+
