@@ -4,7 +4,7 @@ import os
 import utils.preprocess as pp
 
 
-analysis_name = 'check_duplicates&missing'
+analysis_name = 'organize_JAXA_data_block'
 dir_save_fig = './outputs/figs/'
 
 
@@ -258,6 +258,74 @@ if analysis_name == 'pull_JAXA_data_point':
     raise Exception("All attempts failed")
     # pull_jaxa()
 
+if analysis_name == 'organize_JAXA_data_point':
+
+    import os
+    import pandas as pd
+    from ast import literal_eval
+    import json
+
+    gauge_forecast = pd.read_csv(
+        "./outputs/USGS_gaga_filtering/gauge_forecast.csv",
+        dtype={"SITENO": str},
+    )
+    gauge_forecast['up_gage_names'] = gauge_forecast.apply(
+        lambda row: sorted(list(set(
+            literal_eval(row['active_up_gage_tri']) + literal_eval(row['active_up_gage_main']),
+            )), reverse=True), axis=1
+    )
+
+    working_dir = './data/JAXA_precipitation_data'
+
+    for gg in gauge_forecast['SITENO']:
+        with open(f'./data/USGS_basin_geo/{gg}_basin_geo.geojson', 'r') as f:
+            watershed = json.load(f)
+        lat_list, lon_list = pp.get_bounding_grid(watershed)
+        needed_loc_list = [(lat, lon) for lat in lat_list for lon in lon_list]
+
+        csv_files = [file for file in os.listdir(working_dir) if file.endswith('.csv')]
+        saved_file = [(
+            i[i.find('out') + 3: i.find('_st')],
+            i[i.find('_st') + 3: i.find('_ed')],
+            i[i.find('_ed') + 3: i.find('_clat')],
+            i[i.find('_clat') + 5: i.find('_clon')],
+            i[i.find('_clon') + 5: i.find('.csv')],
+        ) for i in csv_files]
+        loc_list = list(set([i[3:5] for i in saved_file]))
+
+        # check if data of all needed locs were downloaded
+        if not all(l in loc_list for l in needed_loc_list):
+            print(f'Not all data for gauge {gg} is collected')
+
+        concatenated_csv_files = [file for file in os.listdir(f'{working_dir}/USGS_{gg}') if file.endswith('.csv')]
+        concatenated_saved_files = [(
+            i[i.find('clat') + 4: i.find('_clon')],
+            i[i.find('_clon') + 5: i.find('.csv')],
+        ) for i in concatenated_csv_files]
+
+        for loc in loc_list:
+            if loc not in concatenated_saved_files:
+                loc_files = [i for i in saved_file if i[3:5] == loc]
+                f_list = []
+                for loc_file in loc_files:
+                    f = pd.read_csv(
+                        f'{working_dir}/out{loc_file[0]}_st{loc_file[1]}_ed{loc_file[2]}_clat{loc_file[3]}_clon{loc_file[4]}.csv',
+                        usecols=['date', 'value'],
+                    )
+                    f_list.append(f)
+                ff = pd.concat(f_list, axis=0)
+                ff['date'] = pd.to_datetime(ff['date'], utc=True)
+                ff = ff.drop_duplicates()
+                ff = ff.set_index('date')
+                ff = ff.asfreq('H')
+
+                # check if being consecutive
+                assert ff.index.to_list() == pd.date_range(
+                    start=ff.index.min(), end=ff.index.max(), freq='H'
+                ).to_list(), 'Datetime index is not consecutive or consistent!'
+
+                ff.to_csv(f'{working_dir}/USGS_{gg}/clat{loc[0]}_clon{loc[1]}.csv')
+
 if analysis_name == 'pull_JAXA_data_block':
 
     import os
@@ -450,9 +518,7 @@ if analysis_name == 'check_duplicates&missing':
             for c in csv_du[1:]:
                 os.remove(f'{working_dir}/{c}')
 
-
-
-if analysis_name == 'organize_JAXA_data':
+if analysis_name == 'organize_JAXA_data_block':
 
     import os
     import pandas as pd
@@ -468,65 +534,71 @@ if analysis_name == 'organize_JAXA_data':
             literal_eval(row['active_up_gage_tri']) + literal_eval(row['active_up_gage_main']),
             )), reverse=True), axis=1
     )
-    # temporary selection
-    gauge_forecast = gauge_forecast[
-        (gauge_forecast['active_up_gage_num_main'] >= 3)
-        & (gauge_forecast['field_measure_count_action'] >= 10)
-        ]
 
-    working_dir = './data/JAXA_precipitation_data'
+    working_dir = 'C:/Users/xpan88/Downloads'
+    if not os.path.exists(f'{working_dir}/concatenated'):
+        os.makedirs(f'{working_dir}/concatenated')
 
-    # for gg in gauge_forecast['SITENO']:
-    for gg in ['01573560']:
+    # split file
+    csv_files = [file for file in os.listdir(working_dir) if file.endswith('.csv')]
+    saved_file = [(
+        i[i.find('_st') + 3: i.find('_ed')],
+        i[i.find('_ed') + 3: i.find('_lat')],
+        i[i.find('_lat') + 4: i.find('_lon')],
+        i[i.find('_lon') + 4: i.find('.csv')],
+    ) for i in csv_files]
+    saved_file = [(
+        i[0], i[1],
+        i[3].split('_')[0],
+        i[2].split('_')[0],
+        i[2].split('_')[1],
+        i[3].split('_')[1],
+    ) for i in saved_file]
 
-        with open(f'./data/USGS_basin_geo/{gg}_basin_geo.geojson', 'r') as f:
-            watershed = json.load(f)
-        lat_list, lon_list = pp.get_bounding_grid(watershed)
-        needed_loc_list = [(lat, lon) for lat in lat_list for lon in lon_list]
+    # concat file
+    csv_cat_files = [file for file in os.listdir(f'{working_dir}/concatenated') if file.endswith('.csv')]
+    saved_cat_file = [i[i.find('USGS_') + 5: i.find('_ul')] for i in csv_cat_files]
 
-        csv_files = [file for file in os.listdir(working_dir) if file.endswith('.csv')]
-        saved_file = [(
-            i[i.find('out') + 3: i.find('_st')],
-            i[i.find('_st') + 3: i.find('_ed')],
-            i[i.find('_ed') + 3: i.find('_clat')],
-            i[i.find('_clat') + 5: i.find('_clon')],
-            i[i.find('_clon') + 5: i.find('.csv')],
-        ) for i in csv_files]
-        loc_list = list(set([i[3:5] for i in saved_file]))
+    for gg in gauge_forecast['SITENO']:
+        if gg not in saved_cat_file:
+            with open(f'./data/USGS_basin_geo/{gg}_basin_geo.geojson', 'r') as f:
+                watershed = json.load(f)
+            b_lat_min, b_lat_max, b_lon_min, b_lon_max = pp.get_bounds(watershed)
 
-        # check if data of all needed locs were downloaded
-        if not all(l in loc_list for l in needed_loc_list):
-            print(f'Not all data for gauge {gg} is collected')
+            dts = pd.date_range(
+                start='1/1/2007',
+                end='01/01/2024',
+                freq='4MS',
+                tz='America/New_York'  # tz is not customized for each gauge
+            ).tz_convert('UTC').strftime('%Y%m%d%H').to_list()
+            st_list = dts[:-1]
+            ed_list = dts[1:]
+            time_range = f'{st_list[0]}_ed_list[-1]'
 
-        concatenated_csv_files = [file for file in os.listdir(f'{working_dir}/USGS_{gg}') if file.endswith('.csv')]
-        concatenated_saved_files = [(
-            i[i.find('clat') + 4: i.find('_clon')],
-            i[i.find('_clon') + 5: i.find('.csv')],
-        ) for i in concatenated_csv_files]
+            f_list = []
+            for st, ed in zip(st_list, ed_list):
+                # if (st, ed, str(b_lat_min), str(b_lat_max), str(b_lon_min), str(b_lon_max)):
+                related_files = [
+                    i for i in csv_files if i[18:] == f'st{st}_ed{ed}_' \
+                                                      f'lat{b_lat_max}_{b_lon_min}_lon{b_lat_min}_{b_lon_max}.csv'
+                ]
+                assert len(related_files) == 1, 'Duplicated files.'
 
-        for loc in loc_list:
-            if loc not in concatenated_saved_files:
-                loc_files = [i for i in saved_file if i[3:5] == loc]
-                f_list = []
-                for loc_file in loc_files:
-                    f = pd.read_csv(
-                        f'{working_dir}/out{loc_file[0]}_st{loc_file[1]}_ed{loc_file[2]}_clat{loc_file[3]}_clon{loc_file[4]}.csv',
-                        usecols=['date', 'value'],
-                    )
-                    f_list.append(f)
-                ff = pd.concat(f_list, axis=0)
-                ff['date'] = pd.to_datetime(ff['date'], utc=True)
-                ff = ff.drop_duplicates()
-                ff = ff.set_index('date')
-                ff = ff.asfreq('H')
+                f = pd.read_csv(f'{working_dir}/{related_files[0]}', usecols=['date', 'unconditional_average_rain'])
+                f_list.append(f)
 
-                # check if being consecutive
-                assert ff.index.to_list() == pd.date_range(
-                    start=ff.index.min(), end=ff.index.max(), freq='H'
-                ).to_list(), 'Datetime index is not consecutive or consistent!'
+            ff = pd.concat(f_list, axis=0)
+            ff['date'] = pd.to_datetime(ff['date'], utc=True)
+            ff = ff.drop_duplicates()
+            ff = ff.set_index('date')
+            ff = ff.asfreq('H')
 
-                ff.to_csv(f'{working_dir}/USGS_{gg}/clat{loc[0]}_clon{loc[1]}.csv')
+            # check if being consecutive
+            assert ff.index.to_list() == pd.date_range(
+                start=ff.index.min(), end=ff.index.max(), freq='H'
+            ).to_list(), 'Datetime index is not consecutive or consistent!'
 
+            ff.to_csv(f'{working_dir}/concatenated/USGS_{gg}_{time_range}_ul_{b_lat_max}_{b_lon_min}_lr_{b_lat_min}_{b_lon_max}.csv')
 
 
 if analysis_name == 'line_rating_curve':
