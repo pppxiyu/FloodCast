@@ -63,26 +63,6 @@ def rc_checker(df, dict_rc, df_field):
     return
 
 
-def get_rc_shifts():
-    rc_shift_records = pd.read_csv(
-        './data/USGS_gage_01573560_shift_curves/01573560_shift_records.csv', index_col=False
-    )
-    rc_shift_records['Start Time'] = pd.to_datetime(rc_shift_records['Start Time'])
-    rc_shift_records['Start Time'] = rc_shift_records['Start Time'].dt.tz_localize('America/New_York')
-    rc_shift_records['Shift number'] = rc_shift_records.apply(
-        lambda r: r['Shift number'] if r['End Time'] == 'Open' else 'base',
-        axis=1
-    )
-    rc_shift_records['End Time'] = rc_shift_records['Start Time'].shift(-1)
-
-    rc_shift_dict = {}
-    for index, row in rc_shift_records.iterrows():
-        curve_num = row['Curve Number']
-        shift_num = row['Shift number']
-        rc_shift_dict[(curve_num, shift_num)] = pp.import_data_shift_rc_0157360(curve_num, shift_num)
-    return rc_shift_records, rc_shift_dict
-
-
 def train_loop(dataloader, model, optimizer, device, verbose=True):
 
     loss_func_1 = mo.WeightedMSELoss()
@@ -162,14 +142,14 @@ def train_w_hp(
         target_in_forward, num_nodes, num_rep=1
 ):
 
-    # batch_size = trial.suggest_int("batch_size", low=128, high=256, step=64)
-    # lr = trial.suggest_float("lr", low=0.0003, high=0.0013, step=0.0002)
-    # feat_out = trial.suggest_int("feat_out", low=16, high=80, step=32)
-    # layer_out = trial.suggest_int("layer_out", low=2, high=4, step=2)
-    batch_size = trial.suggest_int("batch_size", low=128, high=320, step=64)
-    lr = trial.suggest_float("lr", low=0.0001, high=0.0005, step=0.0002)
-    feat_out = trial.suggest_int("feat_out", low=16, high=112, step=32)
-    layer_out = trial.suggest_int("layer_out", low=2, high=4, step=1)
+    batch_size = trial.suggest_int("batch_size", low=128, high=256, step=64)
+    lr = trial.suggest_float("lr", low=0.0003, high=0.0009, step=0.0002)
+    feat_out = trial.suggest_int("feat_out", low=16, high=80, step=32)
+    layer_out = trial.suggest_int("layer_out", low=2, high=4, step=2)
+    # batch_size = trial.suggest_int("batch_size", low=128, high=320, step=64)
+    # lr = trial.suggest_float("lr", low=0.0001, high=0.0005, step=0.0002)
+    # feat_out = trial.suggest_int("feat_out", low=16, high=112, step=32)
+    # layer_out = trial.suggest_int("layer_out", low=2, high=4, step=1)
 
     val_metric_ave = 0
     for i in range(num_rep):
@@ -219,7 +199,7 @@ def train_pred(
     expr_dir_global = expr_dir
 
     # parameters - tune
-    n_trials = 50
+    n_trials = 25
     tune_rep_num = 1
 
     # parameters - default model
@@ -235,19 +215,19 @@ def train_pred(
     # other parameters
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # reload model
-    saved_model = torch.load(
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth'
-        './outputs/experiments/ARCHIVE_pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth',
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
-    )
-    model = saved_model['model']
-    model.eval()
-    model.to(device)
-    model.name = 'LevelPredHomoDCRNN_tune'
+    # # reload model
+    # saved_model = torch.load(
+    #     # './outputs/experiments/ARCHIVE_pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
+    #     # './outputs/experiments/ARCHIVE_pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth'
+    #     './outputs/experiments/ARCHIVE_pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth',
+    #     # './outputs/experiments/ARCHIVE_pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
+    #     # './outputs/experiments/ARCHIVE_pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
+    #     # './outputs/experiments/ARCHIVE_pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
+    # )
+    # model = saved_model['model']
+    # model.eval()
+    # model.to(device)
+    # model.name = 'LevelPredHomoDCRNN_tune'
 
     # data
     adj_dis = pd.read_csv(f'{adj_matrix_dir}/adj_matrix.csv', index_col=0)
@@ -406,26 +386,29 @@ def train_pred(
             f'{target_gage}_00065': 'water_level',
         })
 
-        # check the scope of reliable rating curve
-        test_df_raw = mo.apply_rc_shifts(test_df_raw, convert_from='water_level')
-        test_df_raw['diff'] = test_df_raw['modeled'] - test_df_raw['pred']
-        test_df_raw = test_df_raw.resample('H', closed='right', label='right').mean()
-        test_df_raw = test_df_raw[test_df_raw['diff'] == 0]
+        # # convert pred water level to discharge
+        # test_df_raw = mo.apply_rc_shifts(test_df_raw, convert_from='water_level')
+        # test_df_raw['diff'] = test_df_raw['modeled'] - test_df_raw['pred']
+        # test_df_raw = test_df_raw.resample('H', closed='right', label='right').mean()
+        # test_df_raw = test_df_raw[test_df_raw['diff'] == 0]
+        #
+        # test_df['pred_water_level'] = pred
+        # test_df = mo.apply_rc_shifts(test_df, filter=test_df_raw, convert_from='pred_water_level')
+        # # test_df = test_df.reset_index()
+        # # test_df['pred'] = test_df.apply(
+        # #     lambda row: mo.approx_rc(
+        # #         row,
+        # #         df_raw[[f'{target_gage}_00065', f'{target_gage}_00060']],
+        # #         buffer_len=3,
+        # #         time_col_name='index', level_col_name='pred_water_level'
+        # #     ) if pd.isna(row['pred']) else row['pred'],
+        # #     axis=1
+        # # )
+        # # test_df = test_df.set_index('index')
+        # test_df_full = test_df.copy()
 
-        # convert pred water level to discharge
         test_df['pred_water_level'] = pred
-        test_df = mo.apply_rc_shifts(test_df, filter=test_df_raw, convert_from='pred_water_level')
-        # test_df = test_df.reset_index()
-        # test_df['pred'] = test_df.apply(
-        #     lambda row: mo.approx_rc(
-        #         row,
-        #         df_raw[[f'{target_gage}_00065', f'{target_gage}_00060']],
-        #         buffer_len=3,
-        #         time_col_name='index', level_col_name='pred_water_level'
-        #     ) if pd.isna(row['pred']) else row['pred'],
-        #     axis=1
-        # )
-        # test_df = test_df.set_index('index')
+        test_df['pred'] = np.nan
         test_df_full = test_df.copy()
 
         # field

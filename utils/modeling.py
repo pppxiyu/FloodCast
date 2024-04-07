@@ -14,9 +14,9 @@ import optuna
 import os
 import math
 
-from models.pi_hodcrnn import get_rc_shifts
-
 from sklearn.metrics import mean_absolute_percentage_error
+
+from utils import preprocess as pp
 
 
 class RiverDataset(Dataset):
@@ -814,3 +814,23 @@ def calculate_base_error_ratio(train_df_field, val_df_field, threshold=0):
     base_ratio = mape_base / (mape_base + mape_rc)
 
     return base_ratio
+
+
+def get_rc_shifts():
+    rc_shift_records = pd.read_csv(
+        './data/USGS_gage_01573560_shift_curves/01573560_shift_records.csv', index_col=False
+    )
+    rc_shift_records['Start Time'] = pd.to_datetime(rc_shift_records['Start Time'])
+    rc_shift_records['Start Time'] = rc_shift_records['Start Time'].dt.tz_localize('America/New_York')
+    rc_shift_records['Shift number'] = rc_shift_records.apply(
+        lambda r: r['Shift number'] if r['End Time'] == 'Open' else 'base',
+        axis=1
+    )
+    rc_shift_records['End Time'] = rc_shift_records['Start Time'].shift(-1)
+
+    rc_shift_dict = {}
+    for index, row in rc_shift_records.iterrows():
+        curve_num = row['Curve Number']
+        shift_num = row['Shift number']
+        rc_shift_dict[(curve_num, shift_num)] = pp.import_data_shift_rc_0157360(curve_num, shift_num)
+    return rc_shift_records, rc_shift_dict
