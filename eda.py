@@ -573,7 +573,7 @@ if analysis_name == 'organize_JAXA_data_block':
             ).tz_convert('UTC').strftime('%Y%m%d%H').to_list()
             st_list = dts[:-1]
             ed_list = dts[1:]
-            time_range = f'{st_list[0]}_ed_list[-1]'
+            time_range = f'{st_list[0]}_{ed_list[-1]}'
 
             f_list = []
             for st, ed in zip(st_list, ed_list):

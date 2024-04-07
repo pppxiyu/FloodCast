@@ -21,10 +21,10 @@ gauge_forecast = gauge_forecast[
 target_gage = gauge_forecast['SITENO'].to_list()
 upstream_gages = gauge_forecast['up_gage_names'].to_list()
 lags = [[i + 1 for i in list(range(24))]] * len(gauge_forecast)
-forward = [[6]] * len(gauge_forecast)
+forward = [[3]] * len(gauge_forecast)
 
 # model
-model_name = ['pi_hodcrnn_tune_o3'] * len(gauge_forecast)
+model_name = ['pi_hodcrnn'] * len(gauge_forecast)
 
 # cv and hp tune
 if_cv = [False] * len(gauge_forecast)

@@ -58,23 +58,7 @@ def train_pred(
             df_wl_normed = pp.sample_weights(df_wl_normed, col, if_log=True)
 
     # precip
-    area_ratio_precip = pd.read_csv(f'{adj_matrix_dir}/area_in_boundary_ratio.csv')
-    area_ratio_precip['lat'] = area_ratio_precip['identifier'].str.split('_').str.get(0)
-    area_ratio_precip['lat'] = area_ratio_precip['lat'].astype(float)
-    area_ratio_precip['lat'] = area_ratio_precip['lat'] - 0.05
-    area_ratio_precip['lon'] = area_ratio_precip['identifier'].str.split('_').str.get(1)
-    area_ratio_precip['lon'] = area_ratio_precip['lon'].astype(float)
-    area_ratio_precip['lon'] = area_ratio_precip['lon'] - 0.05
-    area_ratio_precip['label'] = area_ratio_precip.apply(
-        lambda x: f"clat{round(x['lat'], 1)}_clon{round(x['lon'], 1)}",
-        axis=1,
-    )
-    df_precip_scaled = df_precip[area_ratio_precip['label'].to_list()]
-    for col in df_precip_scaled.columns:
-        df_precip_scaled.loc[:, col] = df_precip_scaled[col] * area_ratio_precip[
-            area_ratio_precip['label'] == col
-            ]['updated_area_ratio'].iloc[0]
-    df_precip_scaled = df_precip_scaled.sum(axis=1).to_frame()
+    df_precip_scaled = ft.scale_precip_data(adj_matrix_dir, df_precip)
     scaler_precip = scaler()
     df_precip_normed = pd.DataFrame(
         scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index

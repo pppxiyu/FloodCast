@@ -96,20 +96,26 @@ for target_gage, upstream_gages, lags, forward, model_name, extra_label, if_tune
             )
             data.to_csv(f'{dir_cache}/data_{target_gage}.csv')
 
-        if os.path.isfile(f'{dir_cache}/data_precip_{target_gage}.csv'):
-            data_precip = pd.read_csv(f'{dir_cache}/data_precip_{target_gage}.csv', index_col=0, parse_dates=True)
-            data_precip.index = pd.to_datetime(data_precip.index, utc=True)
-            data_precip.index = data_precip.index.tz_convert('America/New_York')
-        else:
-            with open(f'./data/USGS_basin_geo/{target_gage}_basin_geo.geojson', 'r') as f:
-                watershed = json.load(f)
-            lat_list, lon_list = pp.get_bounding_grid(watershed)
-            data_precip = pp.import_data_precipitation(
-                f'./data/JAXA_precipitation_data/USGS_{target_gage}',
-                lat_list, lon_list,
-                'America/New_York'
-            )
-            data_precip.to_csv(f'{dir_cache}/data_precip_{target_gage}.csv')
+        # if os.path.isfile(f'{dir_cache}/data_precip_{target_gage}.csv'):
+        #     data_precip = pd.read_csv(f'{dir_cache}/data_precip_{target_gage}.csv', index_col=0, parse_dates=True)
+        #     data_precip.index = pd.to_datetime(data_precip.index, utc=True)
+        #     data_precip.index = data_precip.index.tz_convert('America/New_York')
+        # else:
+        #     with open(f'./data/USGS_basin_geo/{target_gage}_basin_geo.geojson', 'r') as f:
+        #         watershed = json.load(f)
+        #     b_lat_min, b_lat_max, b_lon_min, b_lon_max = pp.get_bounds(watershed)
+        #     lat_list, lon_list = [f'{b_lat_max}'], [f'{b_lon_min}']
+        #     data_precip = pp.import_data_precipitation_legacy(
+        #         './data/JAXA_precipitation_data/concatenated',
+        #         lat_list, lon_list,
+        #         'America/New_York'
+        #     )
+        #     data_precip.to_csv(f'{dir_cache}/data_precip_{target_gage}.csv')
+        data_precip = pp.import_data_precipitation(
+            './data/JAXA_precipitation_data/concatenated',
+            target_gage,
+            'America/New_York'
+        )
 
         data_field = pp.import_data_field(f'./data/USGS_gage_field/{target_gage}.csv', to_tz='America/New_York')
 

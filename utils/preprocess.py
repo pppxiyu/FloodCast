@@ -291,7 +291,7 @@ def import_data_shift_rc_0157360(curve, shift, data_head_flag='# Gage height (ft
 
     return rc
 
-def import_data_precipitation(dir, lat_list, lon_list, tz):
+def import_data_precipitation_legacy(dir, lat_list, lon_list, tz):
     csv_names = [file.split('.csv')[0] for file in os.listdir(dir) if file.endswith('.csv')]
     df_list = []
     for lat in lat_list:
@@ -304,6 +304,22 @@ def import_data_precipitation(dir, lat_list, lon_list, tz):
                 df = df.rename(columns={'value': f'clat{lat}_clon{lon}'})
                 df_list.append(df)
     df_precip = pd.concat(df_list, axis=1)
+
+    # take off abnormal values
+    df_precip[df_precip < 0] = np.nan
+    df_precip[df_precip > 100] = np.nan
+    return df_precip
+
+
+def import_data_precipitation(dir, gauge, tz):
+    csv_names = [file.split('.csv')[0] for file in os.listdir(dir) if file.endswith('.csv')]
+    csv_select = [c for c in csv_names if c.startswith(f'USGS_{gauge}')]
+    assert len(csv_select) == 1, 'Duplicated or missing file.'
+
+    df = pd.read_csv(f'{dir}/{csv_select[0]}.csv')
+    df['date'] = pd.to_datetime(df['date'])
+    df['date'] = df['date'].dt.tz_convert(tz)
+    df_precip = df.set_index('date')
 
     # take off abnormal values
     df_precip[df_precip < 0] = np.nan
