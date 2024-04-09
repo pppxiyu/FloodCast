@@ -17,10 +17,7 @@ import json
 
 from sklearn.preprocessing import MinMaxScaler
 
-
-expr_dir_global = ''
 best_score_optuna_tune = 1e10
-
 
 def rc_checker(df, dict_rc, df_field):
 
@@ -139,7 +136,7 @@ def train_w_hp(
         trial, device, train_x, train_y, val_x, val_y,
         feat_in, k,
         adj_dis,
-        target_in_forward, num_nodes, num_rep=1
+        target_in_forward, num_nodes, expr_dir, num_rep=1,
 ):
 
     batch_size = trial.suggest_int("batch_size", low=128, high=256, step=64)
@@ -184,7 +181,7 @@ def train_w_hp(
                 'model': model,
                 'optimizer': optim.state_dict(),
             },
-            f'{expr_dir_global}/best_{label}_optuna_tune_{objective_value}.pth'
+            f'{expr_dir}/best_{label}_optuna_tune_{objective_value}.pth'
         )
     return objective_value
 
@@ -192,11 +189,8 @@ def train_w_hp(
 def train_pred(
         df, df_precip, df_field, dict_rc, adj_matrix_dir,
         lags, forward, target_gage,
-        val_percent, test_percent, expr_dir, data_flood_stage, if_tune
+        val_percent, test_percent, expr_dir, data_flood_stage, if_tune,
 ):
-
-    global expr_dir_global
-    expr_dir_global = expr_dir
 
     # parameters - tune
     n_trials = 25
@@ -259,6 +253,7 @@ def train_pred(
     )
     df_precip_normed = df_precip_normed.rename(columns={df_precip.columns[0]: 'ave_precip'})
 
+    # combine
     df_normed = pd.concat([
         df_wl_normed,
         df_precip_normed
@@ -333,7 +328,8 @@ def train_pred(
                 train_x, train_y, val_x, val_y,
                 feat_in, k,
                 adj_dis,
-                target_in_forward, num_nodes, tune_rep_num),
+                target_in_forward, num_nodes, expr_dir, tune_rep_num,
+            ),
             n_trials=n_trials,
         )
 
@@ -346,6 +342,8 @@ def train_pred(
 
         # disable tune for training model using best hp
         if_tune = False
+        global best_score_optuna_tune
+        best_score_optuna_tune = 1e10
 
     # train without hp tuning
     if not if_tune:

@@ -15,7 +15,7 @@ gauge_forecast['up_gage_names'] = gauge_forecast.apply(
 gauge_forecast = gauge_forecast[
     (gauge_forecast['active_up_gage_num_main'] >= 3)
     & (gauge_forecast['field_measure_count_action'] >= 10)
-    ]
+]
 
 # preprocess and create sequences
 target_gage = gauge_forecast['SITENO'].to_list()
