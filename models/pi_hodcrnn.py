@@ -14,6 +14,7 @@ from models.hodcrnn import HomoDCRNN
 
 import warnings
 import json
+import os
 
 from sklearn.preprocessing import MinMaxScaler
 
@@ -237,15 +238,13 @@ def train_pred(
         if col.endswith('00065'):
             df_wl_normed = pp.sample_weights(df_wl_normed, col, if_log=True)
 
-    # precip, legacy, keep it
+    # precip
     # df_precip_scaled = ft.scale_precip_data(adj_matrix_dir, df_precip)
     # scaler_precip = scaler()
     # df_precip_normed = pd.DataFrame(
     #     scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index
     # )
     # df_precip_normed = df_precip_normed.rename(columns={0:'ave_precip'})
-
-    # precip
     assert len(df_precip.columns) == 1, 'Too much cols.'
     scaler_precip = scaler()
     df_precip_normed = pd.DataFrame(
@@ -274,7 +273,7 @@ def train_pred(
     rows_with_nan = np.any(np.isnan(sequences_w_index), axis=(1, 2))
     sequences_w_index = sequences_w_index[~rows_with_nan]
 
-    # keep usable field measurements (new)
+    # keep usable field measurements
     start_time = df_normed[df_normed['index'] == sequences_w_index[0,0,-1]].index
     df_field = df_field[df_field.index >= start_time.strftime('%Y-%m-%d %H:%M:%S')[0]]
     if len(df_field) < 50:
@@ -286,6 +285,14 @@ def train_pred(
     x = sequences_w_index[:, :, :-1][:, :-1, :]
     dataset_index = ft.create_index_4_cv(x, False, None,
                                          val_percent, test_percent_updated, None, None)  # codes for cv is not revised
+
+    # filter out gage w/o enough field measurements for o1 during test period
+    o1_dp_train_val, o1_dp_test = pp.count_o1_dp(
+        df, df_field, test_df_field, sequences_w_index, target_gage, forward, data_flood_stage
+    )
+    if ((o1_dp_train_val < 2) or (o1_dp_test < 1)) and (target_gage != '01573560'):
+        pp.save_delete_gage_o1_dp(target_gage, forward)
+        return None, None
 
     # make datasets
     x = sequences_w_index[:, :, :-1][:, :-len(forward), :]

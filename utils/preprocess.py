@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 import os
 import json
+import warnings
 
 
 def data_import_legacy(data_dir, time_interval='15min', data_head_flag='agency_cd', leap_from_flag=1):
@@ -852,3 +853,103 @@ def get_bounds(watershed):
 
     return b_lat_min, b_lat_max, b_lon_min, b_lon_max
 
+
+def count_o1_dp(
+        df, df_field, test_df_field, sequences_w_index, target_gage, forward, data_flood_stage
+):
+    # filter out gage w/o enough field measurements for o1 during test period
+    field_test = test_df_field.copy()
+    field_test.index = field_test.index.ceil('H')
+    field_test = field_test.groupby(level=0).mean()
+    field_train_val = df_field[~df_field.index.isin(test_df_field.index)].copy()
+    field_train_val.index = field_train_val.index.ceil('H')
+    field_train_val = field_train_val.groupby(level=0).mean()
+
+    df_filter = df.copy()
+    df_filter = df_filter.reset_index()
+    df_mask = df_filter.index.isin(sequences_w_index[:, -1, -1].astype(int))
+    df_filter.iloc[~df_mask, 1:] = np.nan
+    df_filter = df_filter.set_index('index')
+
+    wl_all = df_filter[[f'{target_gage}_00065']]
+    wl_test = wl_all.loc[wl_all.index.isin(field_test.index)]
+    wl_test_earlier = wl_all.loc[wl_all.index.isin(field_test.index - pd.Timedelta(hours=forward[0]))]
+    wl_train_val = wl_all.loc[wl_all.index.isin(field_train_val.index)]
+    wl_train_val_earlier = wl_all.loc[wl_all.index.isin(field_train_val.index - pd.Timedelta(hours=forward[0]))]
+    assert len(wl_train_val) == len(wl_train_val_earlier), 'df len inconsistent.'
+    assert len(wl_test) == len(wl_test_earlier), 'df len inconsistent.'
+
+    # train val
+    wl_train_val = wl_train_val.reset_index()
+    wl_train_val_earlier = wl_train_val_earlier.reset_index()
+    nan_index_train_val = wl_train_val[wl_train_val.isna().any(axis=1)].index.union(
+        wl_train_val_earlier[wl_train_val_earlier.isna().any(axis=1)].index
+    )
+    wl_train_val = wl_train_val[~wl_train_val.index.isin(nan_index_train_val)]
+    wl_train_val_earlier = wl_train_val_earlier[~wl_train_val_earlier.index.isin(nan_index_train_val)]
+    wl_train_val = wl_train_val.set_index('index')
+    wl_train_val_earlier = wl_train_val_earlier.set_index('index')
+
+    wl_train_val_cat = np.concatenate(
+        (wl_train_val[[f'{target_gage}_00065']].values, wl_train_val_earlier[[f'{target_gage}_00065']].values),
+        axis= 1
+    )
+    index_high_flow_train_val = (wl_train_val_cat >= data_flood_stage['action'].iloc[0]).any(axis=1)
+    em_ratio = index_high_flow_train_val.sum() / wl_train_val.shape[0]
+    diff_flow_train_val = np.abs(
+            wl_train_val[[f'{target_gage}_00065']].values
+            - wl_train_val_earlier[[f'{target_gage}_00065']].values
+    )
+    high_change_train_val = np.percentile(
+        diff_flow_train_val,
+        (1 - em_ratio) * 100,
+    )
+    index_high_change_train_val = np.abs(
+            wl_train_val[[f'{target_gage}_00065']].values - wl_train_val_earlier[[f'{target_gage}_00065']].values
+    ) >= high_change_train_val
+    index_select_o1_train_val = index_high_flow_train_val & index_high_change_train_val[:, 0]
+    o1_dp_train_val = index_select_o1_train_val.sum()
+
+    # test
+    wl_test = wl_test.reset_index()
+    wl_test_earlier = wl_test_earlier.reset_index()
+    nan_index_test = wl_test[wl_test.isna().any(axis=1)].index.union(
+        wl_test_earlier[wl_test_earlier.isna().any(axis=1)].index
+    )
+    wl_test = wl_test[~wl_test.index.isin(nan_index_test)]
+    wl_test_earlier = wl_test_earlier[~wl_test_earlier.index.isin(nan_index_test)]
+    wl_test = wl_test.set_index('index')
+    wl_test_earlier = wl_test_earlier.set_index('index')
+
+    wl_test_cat = np.concatenate(
+        (wl_test[[f'{target_gage}_00065']].values, wl_test_earlier[[f'{target_gage}_00065']].values),
+        axis= 1
+    )
+    index_high_flow_test = (wl_test_cat >= data_flood_stage['action'].iloc[0]).any(axis=1)
+    diff_flow_test = np.abs(
+            wl_test[[f'{target_gage}_00065']].values
+            - wl_test_earlier[[f'{target_gage}_00065']].values
+    )
+    high_change_test = np.percentile(
+        diff_flow_test,
+        (1 - em_ratio) * 100,
+    )
+    index_high_change_test = np.abs(
+            wl_test[[f'{target_gage}_00065']].values - wl_test_earlier[[f'{target_gage}_00065']].values
+    ) >= high_change_test
+    index_select_o1_test = index_high_flow_test & index_high_change_test[:, 0]
+    o1_dp_test = index_select_o1_test.sum()
+    return o1_dp_train_val, o1_dp_test
+
+
+def save_delete_gage_o1_dp(target_gage, forward):
+    warnings.warn(f'Field measurement for o1 is low.')
+    if os.path.exists(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_{forward[0]}.json'):
+        with open(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_{forward[0]}.json', 'r') as f:
+            list_few_field_test = json.load(f)
+    else:
+        list_few_field_test = []
+    list_few_field_test = list_few_field_test + [target_gage]
+    list_few_field_test = list(set(list_few_field_test))
+    with open(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_{forward[0]}.json', 'w') as f:
+        json.dump(list_few_field_test, f)

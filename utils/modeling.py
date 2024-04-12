@@ -717,7 +717,10 @@ def approx_rc(row, df, buffer_len=2, time_col_name='date_time', level_col_name='
     df_buffer['diff'] = df_buffer[df_wl_col[0]] - row[level_col_name]
     df_diff = df_buffer.abs().sort_values(by=['diff'])
     df_diff = df_diff[~df_diff.isna().any(axis=1)]
-    assert len(df_diff) >= 5, 'Too much nan value when approx_rc.'
+
+    if len(df_diff) < 5:
+        print('Too much nan value when approx_rc.')
+        return np.nan
 
     if (df_diff.iloc[0]['diff'] < 1e-5) & (~np.isnan(df_diff.iloc[0][df_dis_col[0]])):
         return df_diff.iloc[0][df_dis_col[0]]
@@ -736,6 +739,9 @@ def approx_rc(row, df, buffer_len=2, time_col_name='date_time', level_col_name='
             while neighbors[df_wl_col[0]].nunique() == 1:
                 neighbors = df_diff.iloc[0:2 + i]
                 i += 1
+                if i > len(df_diff) - 2:
+                    return np.nan
+
             neighbors = neighbors.drop_duplicates(subset=df_wl_col[0])
             estimate = (
                     (neighbors[df_dis_col[0]].iloc[1] - neighbors[df_dis_col[0]].iloc[0]) *
@@ -746,14 +752,14 @@ def approx_rc(row, df, buffer_len=2, time_col_name='date_time', level_col_name='
         return estimate
 
 
-def convert_array_w_rc(pred_wl, df_w_time, df_raw):
+def convert_array_w_rc(pred_wl, df_w_time, df_raw, target_gg):
     time_col_name = df_w_time.index.name if df_w_time.index.name is not None else 'index'
     df_w_time['pred_level'] = pred_wl
     df_w_time = df_w_time.reset_index()
     df_w_time['pred_dis'] = df_w_time.apply(
         lambda row: approx_rc(
             row,
-            df_raw[['01573560_00065', '01573560_00060']],
+            df_raw[[f'{target_gg}_00065', f'{target_gg}_00060']],
             buffer_len=2,
             time_col_name=time_col_name, level_col_name='pred_level'
         ), axis=1
@@ -803,6 +809,8 @@ def calculate_base_error_ratio(train_df_field, val_df_field, threshold=0):
     ) if len(val_df_field) > 0 else 0
     mape_rc = mape_rc_train * train_per + mape_rc_val * (1 - train_per)
 
+    train_df_field = train_df_field.dropna(subset=['pred_discharge'])
+    val_df_field = val_df_field.dropna(subset=['pred_discharge'])
     mape_base_train = mean_absolute_percentage_error(
         train_df_field['discharge_modeled'], train_df_field['pred_discharge']
     ) if len(train_df_field) > 0 else 0

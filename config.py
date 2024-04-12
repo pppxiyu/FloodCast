@@ -11,12 +11,6 @@ gauge_forecast['up_gage_names'] = gauge_forecast.apply(
     )), reverse=True), axis=1
 )
 
-# temporary selection
-gauge_forecast = gauge_forecast[
-    (gauge_forecast['active_up_gage_num_main'] >= 3)
-    & (gauge_forecast['field_measure_count_action'] >= 10)
-]
-
 # preprocess and create sequences
 target_gage = gauge_forecast['SITENO'].to_list()
 upstream_gages = gauge_forecast['up_gage_names'].to_list()
@@ -24,7 +18,7 @@ lags = [[i + 1 for i in list(range(24))]] * len(gauge_forecast)
 forward = [[1]] * len(gauge_forecast)
 
 # model
-model_name = ['pi_hodcrnn'] * len(gauge_forecast)
+model_name = ['pi_hodcrnn_tune_o1'] * len(gauge_forecast)
 
 # cv and hp tune
 if_cv = [False] * len(gauge_forecast)

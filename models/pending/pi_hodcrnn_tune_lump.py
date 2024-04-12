@@ -126,11 +126,11 @@ def train_pred(
     # y / predicted discharge
     train_x_pred_o_rc = mo.convert_array_w_rc(
         np.round(train_x_pred_o, 2),
-        train_df_field.copy(), df_raw
+        train_df_field.copy(), df_raw, target_gage
     )[:, np.newaxis]
     val_x_pred_o_rc = mo.convert_array_w_rc(
         np.round(val_x_pred_o, 2),
-        val_df_field.copy(), df_raw
+        val_df_field.copy(), df_raw, target_gage
     )[:, np.newaxis]
 
     # y / error rate
@@ -169,7 +169,7 @@ def train_pred(
     test_x_pred_o_rc = mo.convert_array_w_rc(
         np.round(test_x_pred_o, 2),
         test_df.copy(),
-        df_raw
+        df_raw, target_gage
     )[:, np.newaxis]
 
     test_y_field = test_df_field['discharge'].values[:, np.newaxis].astype(np.float64)

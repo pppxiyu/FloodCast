@@ -12,6 +12,8 @@ import utils.preprocess as pp
 
 import warnings
 import json
+import os
+import re
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import MinMaxScaler
@@ -29,13 +31,29 @@ def train_pred(
     scaler = MinMaxScaler # StandardScaler
 
     # reload model
+    # saved_dir = './outputs/experiments/ARCHIVE_'
+    # saved_model = torch.load(
+    #     # f'{saved_dir}pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
+    #     # f'{saved_dir}pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth',
+    #     # f'{saved_dir}pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth'
+    #     # f'{saved_dir}pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
+    #     # f'{saved_dir}pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
+    #     f'{saved_dir}pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
+    # )
+
+    saved_dir = f'./outputs/USGS_{target_gage}'
+    saved_folders = os.listdir(f'./outputs/USGS_{target_gage}')
+    pre_expr = [i for i in saved_folders if re.match(r"^pi_hodcrnn_\d+", i)]
+    assert len(pre_expr) >= 1, 'No expr.'
+    pre_expr.sort(reverse=True)
+    select_folder = pre_expr[0]
+    pretrained_models = [i for i in os.listdir(f'{saved_dir}/{select_folder}')
+                         if (i.endswith('.pth')) & (i.startswith('best_'))]
+    assert len(pretrained_models) >= 1, 'No pretrain model.'
+    pretrained_models.sort()
+    pretrained_models_select = pretrained_models[0]
     saved_model = torch.load(
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth',
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth'
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
-        './outputs/experiments/ARCHIVE_pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
+        f'{saved_dir}/{select_folder}/{pretrained_models_select}',
     )
 
     model = saved_model['model']
@@ -58,12 +76,18 @@ def train_pred(
             df_wl_normed = pp.sample_weights(df_wl_normed, col, if_log=True)
 
     # precip
-    df_precip_scaled = ft.scale_precip_data(adj_matrix_dir, df_precip)
+    # df_precip_scaled = ft.scale_precip_data(adj_matrix_dir, df_precip)
+    # scaler_precip = scaler()
+    # df_precip_normed = pd.DataFrame(
+    #     scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index
+    # )
+    # df_precip_normed = df_precip_normed.rename(columns={0:'ave_precip'})
+    assert len(df_precip.columns) == 1, 'Too much cols.'
     scaler_precip = scaler()
     df_precip_normed = pd.DataFrame(
-        scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index
+        scaler_precip.fit_transform(df_precip), columns=df_precip.columns, index=df_precip.index
     )
-    df_precip_normed = df_precip_normed.rename(columns={0:'ave_precip'})
+    df_precip_normed = df_precip_normed.rename(columns={df_precip.columns[0]: 'ave_precip'})
 
     df_normed = pd.concat([
         df_wl_normed,

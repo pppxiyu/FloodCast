@@ -16,6 +16,8 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import PowerTransformer
 
 import warnings
+import os
+import re
 
 
 def train_pred(
@@ -27,14 +29,35 @@ def train_pred(
     scaler = MinMaxScaler # StandardScaler
 
     # reload model
+    # saved_dir = './outputs/experiments/ARCHIVE_'
+    # saved_model = torch.load(
+    #     # f'{saved_dir}pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
+    #     # f'{saved_dir}pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth'
+    #     f'{saved_dir}pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth',
+    #     # f'{saved_dir}pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
+    #     # f'{saved_dir}pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
+    #     # f'{saved_dir}pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
+    # )
+
+    saved_dir = f'./outputs/USGS_{target_gage}'
+    saved_folders = os.listdir(f'./outputs/USGS_{target_gage}')
+    pre_expr = [i for i in saved_folders if re.match(r"^pi_hodcrnn_\d+", i)]
+    if len(pre_expr) < 1:
+        warnings.warn('No expr.')
+        return None, None
+    pre_expr.sort(reverse=True)
+    select_folder = pre_expr[0]
+    pretrained_models = [i for i in os.listdir(f'{saved_dir}/{select_folder}')
+                         if (i.endswith('.pth')) & (i.startswith('best_'))]
+    if len(pretrained_models) < 1:
+        warnings.warn('No pretrain model.')
+        return None, None
+    pretrained_models.sort()
+    pretrained_models_select = pretrained_models[0]
     saved_model = torch.load(
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth'
-        './outputs/experiments/ARCHIVE_pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth',
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
-        # './outputs/experiments/ARCHIVE_pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
+        f'{saved_dir}/{select_folder}/{pretrained_models_select}',
     )
+
     model = saved_model['model']
     model.eval()
     model.to(device)
@@ -52,12 +75,18 @@ def train_pred(
             df_wl_normed = pp.sample_weights(df_wl_normed, col, if_log=True)
 
     # precip
-    df_precip_scaled = ft.scale_precip_data(adj_matrix_dir, df_precip)
+    # df_precip_scaled = ft.scale_precip_data(adj_matrix_dir, df_precip)
+    # scaler_precip = scaler()
+    # df_precip_normed = pd.DataFrame(
+    #     scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index
+    # )
+    # df_precip_normed = df_precip_normed.rename(columns={0:'ave_precip'})
+    assert len(df_precip.columns) == 1, 'Too much cols.'
     scaler_precip = scaler()
     df_precip_normed = pd.DataFrame(
-        scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index
+        scaler_precip.fit_transform(df_precip), columns=df_precip.columns, index=df_precip.index
     )
-    df_precip_normed = df_precip_normed.rename(columns={0:'ave_precip'})
+    df_precip_normed = df_precip_normed.rename(columns={df_precip.columns[0]: 'ave_precip'})
 
     df_normed = pd.concat([
         df_wl_normed,
@@ -139,8 +168,10 @@ def train_pred(
     train_x_pred_o = np.round(train_x_pred_o, 2)
     val_x_pred_o = np.round(val_x_pred_o, 2)
 
-    train_x_pred_o_rc = mo.convert_array_w_rc(train_x_pred_o, train_df_field.copy(), df_raw)[:, np.newaxis]
-    val_x_pred_o_rc = mo.convert_array_w_rc(val_x_pred_o, val_df_field.copy(), df_raw)[:, np.newaxis]
+    train_x_pred_o_rc = mo.convert_array_w_rc(train_x_pred_o, train_df_field.copy(), df_raw, target_gage)[:, np.newaxis]
+    val_x_pred_o_rc = mo.convert_array_w_rc(val_x_pred_o, val_df_field.copy(), df_raw, target_gage)[:, np.newaxis]
+    # train_x_pred_o_rc = train_x_pred_o_rc_w_na[~np.isnan(train_x_pred_o_rc_w_na)[:, 0], :].copy()
+    # val_x_pred_o_rc = val_x_pred_o_rc_w_na[~np.isnan(val_x_pred_o_rc_w_na)[:, 0], :].copy()
 
     train_y_field = train_df_field['discharge'].values[:, np.newaxis].astype(np.float64)
     val_y_field = val_df_field['discharge'].values[:, np.newaxis].astype(np.float64)
@@ -166,6 +197,9 @@ def train_pred(
 
     test_df_field.index = test_df_field.index.ceil('H')
     test_df_field = test_df_field.groupby(level=0).mean()
+    dt_common = test_df_full.index.intersection(test_df_field.index)
+    test_df_field = test_df_field.loc[dt_common]
+
     test_df_full['field'] = test_df_field['discharge']
     test_df_full['index'] = range(len(test_df_full))
     test_df = test_df_full.loc[~test_df_full['field'].isna(), :].copy()
@@ -193,8 +227,9 @@ def train_pred(
     test_x_pred_o_rc = mo.convert_array_w_rc(
         np.round(test_x_pred_o[:, 0], 2),
         test_df.copy(),
-        df_raw
+        df_raw, target_gage
     )[:, np.newaxis]
+    # test_x_pred_o_rc = test_x_pred_o_rc_w_na[~np.isnan(test_x_pred_o_rc_w_na)].copy()
 
     # residual error
     test_y_field = test_df_field['discharge'].values[:, np.newaxis].astype(np.float64)
@@ -237,23 +272,28 @@ def train_pred(
     test_x_series_tune = test_x_series[:, -2][test_filter]
 
     filter_train_dp = np.concatenate((train_y_res_per[train_filter], val_y_res_per[val_filter]), axis=0).shape[0]
-    assert filter_train_dp >= 2, 'Too few data points after filtering.'
+    if filter_train_dp < 3:
+        warnings.warn('Too few training data points for tuning after filtering. Tuning aborted.')
+        return None, None
+    if test_x_series_diff_tune.shape[0] < 1:
+        warnings.warn('Too few test data points for tuning after filtering. Tuning aborted.')
+        return None, None
 
-    # vis
-    plt.scatter(
-        np.concatenate((
-            train_x_series_diff_tune / train_x_series_tune,
-            val_x_series_diff_tune / val_x_series_tune,
-        ), axis=0),
-        np.concatenate((train_y_res_per[train_filter], val_y_res_per[val_filter]), axis=0),
-        color = 'red'
-    )
-    plt.scatter(
-        test_x_series_diff_tune / test_x_series_tune,
-        test_y_res_per[test_filter],
-        color = 'blue'
-    )
-    plt.show()
+    # # vis
+    # plt.scatter(
+    #     np.concatenate((
+    #         train_x_series_diff_tune / train_x_series_tune,
+    #         val_x_series_diff_tune / val_x_series_tune,
+    #     ), axis=0),
+    #     np.concatenate((train_y_res_per[train_filter], val_y_res_per[val_filter]), axis=0),
+    #     color = 'red'
+    # )
+    # plt.scatter(
+    #     test_x_series_diff_tune / test_x_series_tune,
+    #     test_y_res_per[test_filter],
+    #     color = 'blue'
+    # )
+    # plt.show()
 
     # record data
     train_df_field['pred_discharge'] = train_x_pred_o_rc
@@ -273,12 +313,15 @@ def train_pred(
 
     degree = 1
     model_res = make_pipeline(PolynomialFeatures(degree), LinearRegression())
-    model_res.fit(
-        np.concatenate((
+    model_train_x = np.concatenate((
             (train_x_series_diff_tune / train_x_series_tune)[:, np.newaxis],
             (val_x_series_diff_tune / val_x_series_tune)[:, np.newaxis],
-        ), axis=0),
-        np.concatenate((train_y_res_per[train_filter], val_y_res_per[val_filter]), axis=0),
+    ), axis=0)
+    model_train_y = np.concatenate((train_y_res_per[train_filter], val_y_res_per[val_filter]), axis=0)
+    index_nan = np.isnan(np.concatenate((model_train_x, model_train_y), axis=1)).any(axis=1)
+    model_res.fit(
+        model_train_x[~index_nan, :],
+        model_train_y[~index_nan, :]
     )
     residual_pred = model_res.predict((test_x_series_diff_tune / test_x_series_tune)[:, np.newaxis])
     residual_pred = residual_pred * test_x_pred_o_rc[test_filter]

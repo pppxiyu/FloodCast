@@ -515,7 +515,7 @@ if analysis == "filer_gauge_with_enough_data":
     import json
     dir_cache = './data/cache'
 
-    with open('./outputs/USGS_gaga_filtering/gauge_upstream_delete.json', 'r') as f:
+    with open('./outputs/USGS_gaga_filtering/gauge_delete_upstream.json', 'r') as f:
         remove_dict = json.load(f)
     gauge_forecast = pd.read_csv(
         "./outputs/USGS_gaga_filtering/gauge_forecast.csv",
@@ -619,7 +619,7 @@ if analysis == "generate_river_adjacency_gauge":
     # gage_list = ["01573560"]
     # up_gage_list = [["01573160", "01573000", "01572190", "01572025",]]
 
-    with open('./outputs/USGS_gaga_filtering/gauge_upstream_delete.json', 'r') as f:
+    with open('./outputs/USGS_gaga_filtering/gauge_delete_upstream.json', 'r') as f:
         remove_dict = json.load(f)
     with open('./outputs/USGS_gaga_filtering/gauge_delete.json', 'r') as f:
         remove_list = json.load(f)
