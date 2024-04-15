@@ -194,7 +194,7 @@ def train_pred(
 ):
 
     # parameters - tune
-    n_trials = 25
+    n_trials = 15
     tune_rep_num = 1
 
     # parameters - default model
@@ -291,7 +291,7 @@ def train_pred(
         df, df_field, test_df_field, sequences_w_index, target_gage, forward, data_flood_stage
     )
     if ((o1_dp_train_val < 2) or (o1_dp_test < 1)) and (target_gage != '01573560'):
-        pp.save_delete_gage_o1_dp(target_gage, forward)
+        pp.save_delete_gage_o1_dp(target_gage, forward, 'gauge_delete_o1_dp_few')
         return None, None
 
     # make datasets
@@ -320,7 +320,6 @@ def train_pred(
             gauge_delete_action_during_test.append(target_gage)
             gauge_delete_action_during_test = list(set(gauge_delete_action_during_test))
             json.dump(gauge_delete_action_during_test, file)
-
 
     # train with hp tuning
     if if_tune and 'saved_model' not in locals():

@@ -274,9 +274,11 @@ def train_pred(
     filter_train_dp = np.concatenate((train_y_res_per[train_filter], val_y_res_per[val_filter]), axis=0).shape[0]
     if filter_train_dp < 3:
         warnings.warn('Too few training data points for tuning after filtering. Tuning aborted.')
+        pp.save_delete_gage_o1_dp(target_gage, forward, 'gauge_delete_o1_dp_few_during_o1')
         return None, None
     if test_x_series_diff_tune.shape[0] < 1:
         warnings.warn('Too few test data points for tuning after filtering. Tuning aborted.')
+        pp.save_delete_gage_o1_dp(target_gage, forward, 'gauge_delete_o1_dp_few_during_o1')
         return None, None
 
     # # vis

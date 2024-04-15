@@ -18,7 +18,7 @@ lags = [[i + 1 for i in list(range(24))]] * len(gauge_forecast)
 forward = [[1]] * len(gauge_forecast)
 
 # model
-model_name = ['pi_hodcrnn_tune_o1'] * len(gauge_forecast)
+model_name = ['pi_hodcrnn'] * len(gauge_forecast)
 
 # cv and hp tune
 if_cv = [False] * len(gauge_forecast)

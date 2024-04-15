@@ -942,14 +942,14 @@ def count_o1_dp(
     return o1_dp_train_val, o1_dp_test
 
 
-def save_delete_gage_o1_dp(target_gage, forward):
+def save_delete_gage_o1_dp(target_gage, forward, head):
     warnings.warn(f'Field measurement for o1 is low.')
-    if os.path.exists(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_{forward[0]}.json'):
-        with open(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_{forward[0]}.json', 'r') as f:
+    if os.path.exists(f'./outputs/USGS_gaga_filtering/{head}_{forward[0]}.json'):
+        with open(f'./outputs/USGS_gaga_filtering/{head}_{forward[0]}.json', 'r') as f:
             list_few_field_test = json.load(f)
     else:
         list_few_field_test = []
     list_few_field_test = list_few_field_test + [target_gage]
     list_few_field_test = list(set(list_few_field_test))
-    with open(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_{forward[0]}.json', 'w') as f:
+    with open(f'./outputs/USGS_gaga_filtering/{head}_{forward[0]}.json', 'w') as f:
         json.dump(list_few_field_test, f)

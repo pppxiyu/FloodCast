@@ -57,10 +57,14 @@ for target_gage, upstream_gages, lags, forward, model_name, extra_label, if_tune
         remove_list_2 = json.load(f)
     with open(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_{forward[0]}.json', 'r') as f:
         remove_list_3 = json.load(f)
+    with open(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_during_o1_{forward[0]}.json', 'r') as f:
+        remove_list_4 = json.load(f)
     if target_gage in remove_list + ['04293500']:
         continue
-    if (target_gage in remove_list_2) or (target_gage in remove_list_3):
+    if (target_gage in remove_list_2) or (target_gage in remove_list_3) or (target_gage in remove_list_4):
         continue
+    # if target_gage in ['01573560', '01589035', '01633000', '03320000']:
+    #     continue
     if target_gage in list(remove_dict.keys()):
         upstream_gages = [i for i in upstream_gages if i not in remove_dict[target_gage]]
     print(f'Forecasting for {target_gage}.')
