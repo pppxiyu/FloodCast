@@ -194,7 +194,7 @@ def train_pred(
 ):
 
     # parameters - tune
-    n_trials = 15
+    n_trials = 7
     tune_rep_num = 1
 
     # parameters - default model

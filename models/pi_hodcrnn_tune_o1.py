@@ -28,35 +28,35 @@ def train_pred(
     device = "cuda" if torch.cuda.is_available() else "cpu"
     scaler = MinMaxScaler # StandardScaler
 
-    # reload model
-    # saved_dir = './outputs/experiments/ARCHIVE_'
-    # saved_model = torch.load(
-    #     # f'{saved_dir}pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
-    #     # f'{saved_dir}pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth'
-    #     f'{saved_dir}pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth',
-    #     # f'{saved_dir}pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
-    #     # f'{saved_dir}pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
-    #     # f'{saved_dir}pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
-    # )
-
-    saved_dir = f'./outputs/USGS_{target_gage}'
-    saved_folders = os.listdir(f'./outputs/USGS_{target_gage}')
-    pre_expr = [i for i in saved_folders if re.match(r"^pi_hodcrnn_\d+", i)]
-    if len(pre_expr) < 1:
-        warnings.warn('No expr.')
-        return None, None
-    pre_expr.sort(reverse=True)
-    select_folder = pre_expr[0]
-    pretrained_models = [i for i in os.listdir(f'{saved_dir}/{select_folder}')
-                         if (i.endswith('.pth')) & (i.startswith('best_'))]
-    if len(pretrained_models) < 1:
-        warnings.warn('No pretrain model.')
-        return None, None
-    pretrained_models.sort()
-    pretrained_models_select = pretrained_models[0]
+    # # reload model
+    saved_dir = './outputs/experiments/ARCHIVE_'
     saved_model = torch.load(
-        f'{saved_dir}/{select_folder}/{pretrained_models_select}',
+        f'{saved_dir}pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
+        # f'{saved_dir}pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth'
+        # f'{saved_dir}pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth',
+        # f'{saved_dir}pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
+        # f'{saved_dir}pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
+        # f'{saved_dir}pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
     )
+
+    # saved_dir = f'./outputs/USGS_{target_gage}'
+    # saved_folders = os.listdir(f'./outputs/USGS_{target_gage}')
+    # pre_expr = [i for i in saved_folders if re.match(r"^pi_hodcrnn_\d+", i)]
+    # if len(pre_expr) < 1:
+    #     warnings.warn('No expr.')
+    #     return None, None
+    # pre_expr.sort(reverse=True)
+    # select_folder = pre_expr[0]
+    # pretrained_models = [i for i in os.listdir(f'{saved_dir}/{select_folder}')
+    #                      if (i.endswith('.pth')) & (i.startswith('best_'))]
+    # if len(pretrained_models) < 1:
+    #     warnings.warn('No pretrain model.')
+    #     return None, None
+    # pretrained_models.sort()
+    # pretrained_models_select = pretrained_models[0]
+    # saved_model = torch.load(
+    #     f'{saved_dir}/{select_folder}/{pretrained_models_select}',
+    # )
 
     model = saved_model['model']
     model.eval()
@@ -300,8 +300,10 @@ def train_pred(
     # record data
     train_df_field['pred_discharge'] = train_x_pred_o_rc
     train_df_field['last_past_value'] = train_x_past[:, -1]
+    train_df_field['pred_level'] = train_x_series[:, -1]
     val_df_field['pred_discharge'] = val_x_pred_o_rc
     val_df_field['last_past_value'] = val_x_past[:, -1]
+    val_df_field['pred_level'] = val_x_series[:, -1]
     train_val_df_field = pd.concat([train_df_field, val_df_field]).sort_index()
     train_val_df_field.to_csv(f'{expr_dir}/train_val_df.csv')
 

@@ -4,7 +4,7 @@ import os
 import utils.preprocess as pp
 
 
-analysis_name = 'organize_JAXA_data_block'
+analysis_name = 'field_vs_model_all_flooding_rivers_vis'
 dir_save_fig = './outputs/figs/'
 
 

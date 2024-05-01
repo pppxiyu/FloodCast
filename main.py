@@ -48,23 +48,31 @@ for target_gage, upstream_gages, lags, forward, model_name, extra_label, if_tune
     expr_dir_global = ''
     best_score_optuna_tune = 1e10
 
-    # revise gauge and up gauge
+    # gauge filters
     with open('./outputs/USGS_gaga_filtering/gauge_delete_upstream.json', 'r') as f:
         remove_dict = json.load(f)
     with open('./outputs/USGS_gaga_filtering/gauge_delete.json', 'r') as f:
         remove_list = json.load(f)
     with open('./outputs/USGS_gaga_filtering/gauge_delete_action_during_test.json', 'r') as f:
         remove_list_2 = json.load(f)
-    with open(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_{forward[0]}.json', 'r') as f:
-        remove_list_3 = json.load(f)
-    with open(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_during_o1_{forward[0]}.json', 'r') as f:
-        remove_list_4 = json.load(f)
+    # if os.path.exists(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_{forward[0]}.json'):
+    #     with open(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_{forward[0]}.json', 'r') as f:
+    #         remove_list_3 = json.load(f)
+    # else:
+    remove_list_3 = []
+    # if os.path.exists(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_during_o1_{forward[0]}.json'):
+    #     with open(f'./outputs/USGS_gaga_filtering/gauge_delete_o1_dp_few_during_o1_{forward[0]}.json', 'r') as f:
+    #         remove_list_4 = json.load(f)
+    # else:
+    remove_list_4 = []
     if target_gage in remove_list + ['04293500']:
         continue
     if (target_gage in remove_list_2) or (target_gage in remove_list_3) or (target_gage in remove_list_4):
         continue
     # if target_gage in ['01573560', '01589035', '01633000', '03320000']:
     #     continue
+    if target_gage not in ['01589035']:
+        continue
     if target_gage in list(remove_dict.keys()):
         upstream_gages = [i for i in upstream_gages if i not in remove_dict[target_gage]]
     print(f'Forecasting for {target_gage}.')

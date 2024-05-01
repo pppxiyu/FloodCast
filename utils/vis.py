@@ -96,8 +96,9 @@ def plot_bar_pac(series, title, save_dir, if_ac=False):
 def plot_ridge_rc_error(df, save_dir):
 
     import plotly.figure_factory as ff
+    import plotly.io as io
 
-    labels = ['Normal', 'Action', 'Flood', 'Moderate', 'Major']
+    labels = ['Normal', 'Action', 'Minor', 'Moderate', 'Major']
     over_5_per = [
         round((len(df[col][df[col] > 5].dropna()) / len(df[col].dropna())) * 100, 2)
         for col in df.columns
@@ -140,11 +141,33 @@ def plot_ridge_rc_error(df, save_dir):
         xanchor="left",
     )
     fig.update_layout(
-        legend=dict(x=.8, y=.95),
+        template='seaborn',
         xaxis_title='MAPE (%)',
-        template='ggplot2',
+        yaxis_title='Density',
+        showlegend=True,
+        plot_bgcolor='white',
+        xaxis=dict(
+            showline=True,
+            linewidth=2,
+            linecolor='black',
+            mirror=True,
+            ticks='outside', tickmode='linear',
+            tickformat=',',
+        ),
+        yaxis=dict(
+            showline=True,
+            linewidth=2,
+            linecolor='black',
+            mirror='all',
+            range=[0, 0.4],dtick=0.05,
+            ticks='outside', tickmode='linear',
+            tickformat=',',
+        ),
+        width=600, height=450,
+        legend=dict(x=0.75, y=0.99,),
     )
     fig.write_html(f'{save_dir}/dist_rc_error.html')
+    io.write_image(fig, f'{save_dir}/dist_rc_error.png', scale=4)
 
     return
 

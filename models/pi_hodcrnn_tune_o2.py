@@ -101,42 +101,42 @@ def train_pred(
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # reload model
-    # saved_dir = './outputs/experiments/ARCHIVE_'
-    # saved_model = torch.load(
-    #     # f'{saved_dir}pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
-    #     # f'{saved_dir}pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth'
-    #     f'{saved_dir}pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth',
-    #     # f'{saved_dir}pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
-    #     # f'{saved_dir}pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
-    #     # f'{saved_dir}pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
-    # )
-
-    saved_dir = f'./outputs/USGS_{target_gage}'
-    saved_folders = os.listdir(f'./outputs/USGS_{target_gage}')
-    pre_expr = [i for i in saved_folders if re.match(r"^pi_hodcrnn_\d+", i)]
-    assert len(pre_expr) >= 1, 'No expr.'
-    pre_expr.sort(reverse=True)
-    select_folder = pre_expr[0]
-    pretrained_models = [i for i in os.listdir(f'{saved_dir}/{select_folder}')
-                         if (i.endswith('.pth')) & (i.startswith('best_'))]
-    assert len(pretrained_models) >= 1, 'No pretrain model.'
-    pretrained_models.sort()
-    pretrained_models_select = pretrained_models[0]
+    saved_dir = './outputs/experiments/ARCHIVE_'
     saved_model = torch.load(
-        f'{saved_dir}/{select_folder}/{pretrained_models_select}',
+        f'{saved_dir}pi_hodcrnn_1__2024-03-14-17-37-25/best_HODCRNN_optuna_tune_0.00023879233049228787.pth',
+        # f'{saved_dir}pi_hodcrnn_2__2024-03-14-17-34-33/best_HODCRNN_optuna_tune_0.0004181543772574514.pth'
+        # f'{saved_dir}pi_hodcrnn_3__2024-03-14-17-32-00/best_HODCRNN_optuna_tune_0.0005952782230451703.pth',
+        # f'{saved_dir}pi_hodcrnn_4__2024-03-14-17-29-51/best_HODCRNN_optuna_tune_0.0008744496735744178.pth',
+        # f'{saved_dir}pi_hodcrnn_5__2024-03-14-17-24-40/best_HODCRNN_optuna_tune_0.0010843131458386779.pth',
+        # f'{saved_dir}pi_hodcrnn_6__2024-03-14-17-22-44/best_HODCRNN_optuna_tune_0.001381319249048829.pth',
     )
+
+    # saved_dir = f'./outputs/USGS_{target_gage}'
+    # saved_folders = os.listdir(f'./outputs/USGS_{target_gage}')
+    # pre_expr = [i for i in saved_folders if re.match(r"^pi_hodcrnn_\d+", i)]
+    # assert len(pre_expr) >= 1, 'No expr.'
+    # pre_expr.sort(reverse=True)
+    # select_folder = pre_expr[0]
+    # pretrained_models = [i for i in os.listdir(f'{saved_dir}/{select_folder}')
+    #                      if (i.endswith('.pth')) & (i.startswith('best_'))]
+    # assert len(pretrained_models) >= 1, 'No pretrain model.'
+    # pretrained_models.sort()
+    # pretrained_models_select = pretrained_models[0]
+    # saved_model = torch.load(
+    #     f'{saved_dir}/{select_folder}/{pretrained_models_select}',
+    # )
 
     model = saved_model['model']
     model.eval()
     model.to(device)
     model.name = 'LevelPredHomoDCRNN_tune'
 
-    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_1__2024-04-04-13-15-56'
-    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_2__2024-04-04-13-26-18'
-    dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_3__2024-04-04-13-27-54'
-    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_4__2024-04-04-13-29-34'
-    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_5__2024-04-04-13-30-53'
-    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_6__2024-04-04-13-32-38'
+    dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_1__2024-04-28-13-17-47'
+    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_2__2024-04-28-14-11-47'
+    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_3__2024-04-28-14-12-57'
+    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_4__2024-04-28-14-14-08'
+    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_5__2024-04-28-14-15-17'
+    # dir_o1 = './outputs/experiments/ARCHIVE_pi_hodcrnn_tune_o1_6__2024-04-28-14-16-35'
     with open(f'{dir_o1}/tuner_o1_1degree_poly.pkl', 'rb') as file:
         tuner_o1 = pickle.load(file)
     with open(f'{dir_o1}/tuner_o1_apply_index_train.pkl', 'rb') as file:
@@ -162,12 +162,18 @@ def train_pred(
             df_wl_normed = pp.sample_weights(df_wl_normed, col, if_log=True)
 
     # precip
-    df_precip_scaled = ft.scale_precip_data(adj_matrix_dir, df_precip)
+    # df_precip_scaled = ft.scale_precip_data(adj_matrix_dir, df_precip)
+    # scaler_precip = scaler()
+    # df_precip_normed = pd.DataFrame(
+    #     scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index
+    # )
+    # df_precip_normed = df_precip_normed.rename(columns={0:'ave_precip'})
+    assert len(df_precip.columns) == 1, 'Too much cols.'
     scaler_precip = scaler()
     df_precip_normed = pd.DataFrame(
-        scaler_precip.fit_transform(df_precip_scaled), columns=df_precip_scaled.columns, index=df_precip_scaled.index
+        scaler_precip.fit_transform(df_precip), columns=df_precip.columns, index=df_precip.index
     )
-    df_precip_normed = df_precip_normed.rename(columns={0:'ave_precip'})
+    df_precip_normed = df_precip_normed.rename(columns={df_precip.columns[0]: 'ave_precip'})
 
     df_normed = pd.concat([
         df_wl_normed,
@@ -272,7 +278,9 @@ def train_pred(
 
     # record data
     train_df_field['pred_discharge'] = train_x_pred_o_rc
+    train_df_field['pred_level'] = train_x_pred_o
     val_df_field['pred_discharge'] = val_x_pred_o_rc
+    val_df_field['pred_level'] = val_x_pred_o
     train_val_df_field = pd.concat([train_df_field, val_df_field]).sort_index()
     train_val_df_field.to_csv(f'{expr_dir}/train_val_df.csv')
 
